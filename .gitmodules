@@ -1,0 +1,3 @@
+[submodule "bobbycar-protocol"]
+	path = bobbycar-protocol
+	url = git@github.com:bobbycar-graz/bobbycar-protocol.git
