@@ -3,7 +3,7 @@
 ```
 git clone --recursive git@github.com:bobbycar-graz/bobbycar-controller-firmware.git
 cd bobbycar-controller-firmware/
-cmake -DCMAKE_BUILD_TYPE=Release
+cmake -DCMAKE_BUILD_TYPE=Release .
 make unlock0 # needed only once per board
 make flash
 ```
