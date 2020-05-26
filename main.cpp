@@ -22,6 +22,7 @@
 */
 
 #include <algorithm>
+#include <cmath>
 
 #include "stm32f1xx_hal.h"
 
@@ -76,9 +77,6 @@ int16_t offsetrr2    = 2000;
 int16_t offsetdcl    = 2000;
 int16_t offsetdcr    = 2000;
 
-int16_t batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
-int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
-
 int32_t board_temp_adcFixdt = adc_buffer.temp << 20;  // Fixed-point filter output initialized with current ADC converted to fixed-point
 int16_t board_temp_adcFilt  = adc_buffer.temp;
 int16_t board_temp_deg_c;
@@ -93,6 +91,8 @@ struct {
     MotorState state;
 
     uint32_t chops = 0;
+    int16_T lastAngle = 0;
+    int32_t angleDelta = 0;
 } left, right;
 
 struct {
@@ -215,7 +215,7 @@ int main()
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 
     for (;;) {
-        HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+        HAL_Delay(1); //delay in ms
 
         parseCommand();
 
@@ -262,11 +262,6 @@ void updateMotors()
         return;
     }
 
-    if (buzzer.timer % 1000 == 0) {  // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
-    }
-
     // Get Left motor currents
     int16_t curL_phaA = (int16_t)(offsetrl1 - adc_buffer.rl1);
     int16_t curL_phaB = (int16_t)(offsetrl2 - adc_buffer.rl2);
@@ -284,6 +279,36 @@ void updateMotors()
     const int8_t chopR = std::abs(curR_DC) > (right.state.iDcMax * A2BIT_CONV);
     if (chopR)
         right.chops++;
+
+    const auto doTheAngleThing = [](auto &motor){
+        if (motor.rtY.a_elecAngle < motor.lastAngle)
+        {
+            if (motor.lastAngle - motor.rtY.a_elecAngle < 180)
+            {
+                motor.angleDelta -= motor.lastAngle - motor.rtY.a_elecAngle;
+            }
+            else
+            {
+                // wrap
+            }
+        }
+        else
+        {
+            if (motor.rtY.a_elecAngle - motor.lastAngle < 180)
+            {
+                motor.angleDelta += motor.rtY.a_elecAngle - motor.lastAngle;
+            }
+            else
+            {
+                // wrap
+            }
+        }
+
+        motor.lastAngle = motor.rtY.a_elecAngle;
+    };
+
+    doTheAngleThing(left);
+    doTheAngleThing(right);
 
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
@@ -967,17 +992,15 @@ void MX_ADC2_Init() {
 }
 
 void poweroff() {
-  //  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
-        buzzer.state.pattern = 0;
-        left.state.enable = right.state.enable = 0;
-        for (int i = 0; i < 8; i++) {
-            buzzer.state.freq = (uint8_t)i;
-            HAL_Delay(50);
-        }
-        HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
-        for (int i = 0; i < 5; i++)
-            HAL_Delay(1000);
-  //  }
+    buzzer.state.pattern = 0;
+    left.state.enable = right.state.enable = 0;
+    for (uint8_t i = 0; i < 8; i++) {
+        buzzer.state.freq = i;
+        HAL_Delay(50);
+    }
+    HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
+    for (int i = 0; i < 5; i++)
+        HAL_Delay(1000);
 }
 
 void parseCommand()
@@ -1012,9 +1035,9 @@ void parseCommand()
 
     if (!any_parsed)
     {
-        if (timeoutCntSerial++ >= 100) // Timeout qualification
+        if (timeoutCntSerial++ >= 500) // Timeout qualification
         {
-            timeoutCntSerial  = 100; // Limit timout counter value
+            timeoutCntSerial  = 500; // Limit timout counter value
 
             left.state = right.state = {.enable=true};
 
@@ -1034,45 +1057,49 @@ void parseCommand()
 
 void sendFeedback()
 {
-    if (main_loop_counter % 50 == 0) {    // Send data periodically
-        if(UART_DMA_CHANNEL->CNDTR == 0) {
-            feedback.start = Feedback::VALID_HEADER;
+    if(UART_DMA_CHANNEL->CNDTR == 0)
+    {
+        feedback.start = Feedback::VALID_HEADER;
 
-            feedback.left.angle = left.rtY.a_elecAngle;
-            feedback.right.angle = right.rtY.a_elecAngle;
+        feedback.left.angle = left.rtY.a_elecAngle;
+        feedback.right.angle = right.rtY.a_elecAngle;
 
-            feedback.left.speed = left.rtY.n_mot;
-            feedback.right.speed = right.rtY.n_mot;
+        feedback.left.speed = left.rtY.n_mot;
+        feedback.right.speed = right.rtY.n_mot;
 
-            feedback.left.error = left.rtY.z_errCode;
-            feedback.right.error = right.rtY.z_errCode;
+        feedback.left.error = left.rtY.z_errCode;
+        feedback.right.error = right.rtY.z_errCode;
 
-            feedback.left.current = left.rtU.i_DCLink;
-            feedback.right.current = right.rtU.i_DCLink;
+        feedback.left.current = left.rtU.i_DCLink;
+        feedback.right.current = right.rtU.i_DCLink;
 
-            feedback.left.chops = left.chops;
-            feedback.right.chops = right.chops;
-            left.chops = 0;
-            right.chops = 0;
+        feedback.left.chops = left.chops;
+        feedback.right.chops = right.chops;
+        left.chops = 0;
+        right.chops = 0;
 
-            feedback.left.hallA = left.rtU.b_hallA;
-            feedback.left.hallB = left.rtU.b_hallB;
-            feedback.left.hallC = left.rtU.b_hallC;
-            feedback.right.hallA = right.rtU.b_hallA;
-            feedback.right.hallB = right.rtU.b_hallB;
-            feedback.right.hallC = right.rtU.b_hallC;
+        feedback.left.angleDelta = left.angleDelta;
+        feedback.right.angleDelta = right.angleDelta;
+        left.angleDelta = 0;
+        right.angleDelta = 0;
 
-            feedback.batVoltage = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
-            feedback.boardTemp = board_temp_deg_c;
-            feedback.timeoutCntSerial = timeoutCntSerial;
+        feedback.left.hallA = left.rtU.b_hallA;
+        feedback.left.hallB = left.rtU.b_hallB;
+        feedback.left.hallC = left.rtU.b_hallC;
+        feedback.right.hallA = right.rtU.b_hallA;
+        feedback.right.hallB = right.rtU.b_hallB;
+        feedback.right.hallC = right.rtU.b_hallC;
 
-            feedback.checksum = calculateChecksum(feedback);
+        feedback.batVoltage = adc_buffer.batt1 * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
+        feedback.boardTemp = board_temp_deg_c;
+        feedback.timeoutCntSerial = timeoutCntSerial;
 
-            UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
-            UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
-            UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
-            UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
-        }
+        feedback.checksum = calculateChecksum(feedback);
+
+        UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
+        UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
+        UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
+        UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
     }
 }
 
@@ -1101,8 +1128,7 @@ extern "C" void HardFault_Handler() {
   /* USER CODE BEGIN HardFault_IRQn 0 */
 
   /* USER CODE END HardFault_IRQn 0 */
-  while(1) {
-  }
+  for (;;);
   /* USER CODE BEGIN HardFault_IRQn 1 */
 
   /* USER CODE END HardFault_IRQn 1 */
@@ -1115,8 +1141,7 @@ extern "C" void MemManage_Handler() {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
 
   /* USER CODE END MemoryManagement_IRQn 0 */
-  while(1) {
-  }
+  for (;;);
   /* USER CODE BEGIN MemoryManagement_IRQn 1 */
 
   /* USER CODE END MemoryManagement_IRQn 1 */
@@ -1129,8 +1154,7 @@ extern "C" void BusFault_Handler() {
   /* USER CODE BEGIN BusFault_IRQn 0 */
 
   /* USER CODE END BusFault_IRQn 0 */
-  while(1) {
-  }
+  for (;;);
   /* USER CODE BEGIN BusFault_IRQn 1 */
 
   /* USER CODE END BusFault_IRQn 1 */
@@ -1143,8 +1167,7 @@ extern "C" void UsageFault_Handler() {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
 
   /* USER CODE END UsageFault_IRQn 0 */
-  while(1) {
-  }
+  for (;;);
   /* USER CODE BEGIN UsageFault_IRQn 1 */
 
   /* USER CODE END UsageFault_IRQn 1 */
@@ -1189,10 +1212,6 @@ extern "C" void PendSV_Handler() {
 /**
 * @brief This function handles System tick timer.
 */
-#ifdef CONTROL_PPM
-extern "C" void PPM_SysTick_Callback();
-#endif
-
 extern "C" void SysTick_Handler() {
   /* USER CODE BEGIN SysTick_IRQn 0 */
 
@@ -1200,9 +1219,7 @@ extern "C" void SysTick_Handler() {
   HAL_IncTick();
   HAL_SYSTICK_IRQHandler();
   /* USER CODE BEGIN SysTick_IRQn 1 */
-#ifdef CONTROL_PPM
-  PPM_SysTick_Callback();
-#endif
+
   /* USER CODE END SysTick_IRQn 1 */
 }
 
