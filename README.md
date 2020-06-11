@@ -1,6 +1,16 @@
 # bobbycar-controller-firmware
 
 ```
+#dependencies
+sudo pacman -Sy --noconfirm \
+    arm-none-eabi-binutils \
+    arm-none-eabi-gcc \
+    arm-none-eabi-gdb \
+    arm-none-eabi-newlib \
+    cmake \
+    openocd \
+    stlink
+
 git clone --recursive git@github.com:bobbycar-graz/bobbycar-controller-firmware.git
 cd bobbycar-controller-firmware/
 cmake -DCMAKE_BUILD_TYPE=Release .
