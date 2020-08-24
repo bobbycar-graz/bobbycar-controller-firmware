@@ -4,3 +4,6 @@
 [submodule "bobbycar-foc-model"]
 	path = bobbycar-foc-model
 	url = git@github.com:bobbycar-graz/bobbycar-foc-model.git
+[submodule "STM32CubeF1"]
+	path = STM32CubeF1
+	url = https://github.com/STMicroelectronics/STM32CubeF1.git
