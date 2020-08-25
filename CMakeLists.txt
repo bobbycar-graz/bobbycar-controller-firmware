@@ -23,30 +23,30 @@ add_definitions(-DUSE_HAL_DRIVER -DSTM32F103xE)
 
 include_directories(
     .
-    Drivers/STM32F1xx_HAL_Driver/Inc
-    Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
-    Drivers/CMSIS/Device/ST/STM32F1xx/Include
-    Drivers/CMSIS/Include
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Inc
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
+    STM32CubeF1/Drivers/CMSIS/Device/ST/STM32F1xx/Include
+    STM32CubeF1/Drivers/CMSIS/Include
     bobbycar-foc-model
     bobbycar-protocol
 )
 
 add_executable(firmware.elf
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim_ex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc_ex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c
-    Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim_ex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc_ex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
 
     bobbycar-foc-model/BLDC_controller.h
     bobbycar-foc-model/BLDC_controller.c
