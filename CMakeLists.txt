@@ -1,10 +1,12 @@
-cmake_minimum_required (VERSION 2.6)
-
-project(bobbycar-controller-firmware ASM C CXX)
+cmake_minimum_required (VERSION 3.5)
 
 set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_CXX_COMPILER arm-none-eabi-gcc)
+
+SET(CMAKE_SYSTEM_PROCESSOR arm)
+SET(CMAKE_CROSSCOMPILING 1)
+SET(CMAKE_SYSTEM_NAME Generic)
 
 set(COMMON_FLAGS "-mcpu=cortex-m3 -mthumb -Wall -fdata-sections -ffunction-sections")
 set(CMAKE_ASM_FLAGS "${COMMON_FLAGS} -x assembler-with-cpp")
@@ -13,11 +15,11 @@ set(CMAKE_CXX_FLAGS "${COMMON_FLAGS} -std=c++17")
 
 set(CMAKE_CXX_STANDARD 17)
 
-set(CMAKE_EXE_LINKER_FLAGS "-specs=nosys.specs -T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH.ld -lc -lm -lnosys -lstdc++ -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref")
+set(COMMON_LINKER_FLAGS "-specs=nosys.specs -T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH.ld -lc -lm -lnosys -lstdc++ -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref")
+set(CMAKE_EXE_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
 
-set(CMAKE_SHARED_LIBRARY_LINK_ASM_FLAGS)
-set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS)
-set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS)
+project(bobbycar-controller-firmware ASM C CXX)
 
 add_definitions(-DUSE_HAL_DRIVER -DSTM32F103xE)
 
