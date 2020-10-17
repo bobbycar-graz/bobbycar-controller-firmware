@@ -212,34 +212,54 @@ int main()
 //#define UART_DMA_CHANNEL DMA1_Channel2
     //UART3_Init();
 
-    HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+    int pwm = 0;
+    int8_t dir = 1;
+
+    const int pwmMax = 1000;
 
     for (;;) {
-        HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
-
-        parseCommand();
+        HAL_Delay(DELAY_IN_MAIN_LOOP * 2); //delay in ms
 
         timeout = 0;
+
+        left.state.enable = false;
+        left.state.ctrlMod = ControlMode::Voltage;
+        left.state.ctrlTyp = ControlType::Sinusoidal;
+        left.state.pwm = pwm;
+        left.state.iMotMax = 1;
+
+        right.state.enable = true;
+        right.state.ctrlMod = ControlMode::Voltage;
+        right.state.ctrlTyp = ControlType::Sinusoidal;
+        right.state.pwm = pwm;
+        right.state.iMotMax = 1;
+
+        pwm += dir;
+        if (pwm > pwmMax) {
+          pwm = pwmMax;
+          dir = -1;
+        } else if (pwm < -pwmMax) {
+          pwm = -pwmMax;
+          dir = 1;
+        }
 
         // ####### CALC BOARD TEMPERATURE #######
         filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
         board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
         board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
-        sendFeedback();
-
-        if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
-        {
-            left.state.enable = right.state.enable = 0;           // disable motors
-
-            while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
-
-            if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
-                __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
-            } else {
-                poweroff();                                         // release power-latch
-            }
-        }
+//        if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
+//        {
+//            left.state.enable = right.state.enable = 0;           // disable motors
+//
+//            while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
+//
+//            if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
+//                __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
+//            } else {
+//                poweroff();                                         // release power-latch
+//            }
+//        }
 
         main_loop_counter++;
         timeout++;
@@ -323,7 +343,7 @@ void updateMotors()
     constexpr int32_t pwm_margin = 100;        /* This margin allows to always have a window in the PWM signal for proper Phase currents measurement */
 
     /* Make sure to stop BOTH motors in case of an error */
-    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && right.rtY.z_errCode == 0;
+    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && left.rtY.z_errCode == 0;
     const bool enableRFin = right.state.enable && left.rtY.z_errCode == 0 && right.rtY.z_errCode == 0;
 
     // ========================= LEFT MOTOR ============================
