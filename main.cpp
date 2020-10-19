@@ -164,8 +164,14 @@ int main()
     HAL_ADC_Start(&hadc1);
     HAL_ADC_Start(&hadc2);
 
+    enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
+
     left.rtP = rtP_Left;
-    left.rtP.b_selPhaABCurrMeas  = 1;            // Left motor measured current phases = {iA, iB} -> do NOT change
+#ifdef PETERS_PLATINE
+    left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;            // Left motor measured current phases = {iB, iC} -> do NOT change
+#else
+    left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;            // Left motor measured current phases = {iA, iB} -> do NOT change
+#endif
     left.rtP.z_ctrlTypSel        = uint8_t(left.state.ctrlTyp);
     left.rtP.b_diagEna           = DIAG_ENA;
     left.rtP.i_max               = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
@@ -181,7 +187,7 @@ int main()
     left.rtM.outputs             = &left.rtY;
 
     right.rtP = rtP_Left;
-    right.rtP.b_selPhaABCurrMeas = 0;            // Left motor measured current phases = {iB, iC} -> do NOT change
+    right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;            // Right motor measured current phases = {iB, iC} -> do NOT change
     right.rtP.z_ctrlTypSel       = uint8_t(right.state.ctrlTyp);
     right.rtP.b_diagEna          = DIAG_ENA;
     right.rtP.i_max              = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
