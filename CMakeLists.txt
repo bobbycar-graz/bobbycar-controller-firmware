@@ -36,6 +36,7 @@ include_directories(
 #add_definitions(-DMOTOR_TEST)
 #add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
 add_definitions(-DFEATURE_BUTTON)
+#add_definitions(-DPETERS_PLATINE)
 
 add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c

@@ -1,12 +1,16 @@
 #pragma once
 
-#define PWM_FREQ            16000     // PWM frequency in Hz
-#define DEAD_TIME              48     // PWM deadtime
-#ifdef MOTOR_TEST
-  #define DELAY_IN_MAIN_LOOP    10
+#ifdef PETERS_PLATINE
+#define PWM_FREQ            10000     // PWM frequency in Hz
 #else
-  #define DELAY_IN_MAIN_LOOP    5
+#define PWM_FREQ            16000     // PWM frequency in Hz
 #endif
+#define DEAD_TIME              48     // PWM deadtime
+//#ifdef MOTOR_TEST
+//  #define DELAY_IN_MAIN_LOOP    10
+//#else
+  #define DELAY_IN_MAIN_LOOP    5
+//#endif
 #define TIMEOUT                 5     // number of wrong / missing input commands before emergency off
 #define A2BIT_CONV             50     // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
 
