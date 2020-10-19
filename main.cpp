@@ -165,7 +165,7 @@ int main()
     HAL_ADC_Start(&hadc2);
 
     left.rtP = rtP_Left;
-    left.rtP.b_selPhaABCurrMeas  = 1;            // Left motor measured current phases = {iA, iB} -> do NOT change
+    left.rtP.z_selPhaCurMeasABC  = 1;            // Left motor measured current phases = {iA, iB} -> do NOT change
     left.rtP.z_ctrlTypSel        = uint8_t(left.state.ctrlTyp);
     left.rtP.b_diagEna           = DIAG_ENA;
     left.rtP.i_max               = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
@@ -181,7 +181,7 @@ int main()
     left.rtM.outputs             = &left.rtY;
 
     right.rtP = rtP_Left;
-    right.rtP.b_selPhaABCurrMeas = 0;            // Left motor measured current phases = {iB, iC} -> do NOT change
+    right.rtP.z_selPhaCurMeasABC = 1;            // Left motor measured current phases = {iB, iC} -> do NOT change
     right.rtP.z_ctrlTypSel       = uint8_t(right.state.ctrlTyp);
     right.rtP.b_diagEna          = DIAG_ENA;
     right.rtP.i_max              = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
@@ -215,7 +215,7 @@ int main()
     int pwm = 0;
     int8_t dir = 1;
 
-    const int pwmMax = 400;
+    const int pwmMax = 1000;
 
     for (;;) {
         HAL_Delay(DELAY_IN_MAIN_LOOP ); //delay in ms
@@ -288,8 +288,8 @@ void updateMotors()
     }
 
     // Get Left motor currents
-    int16_t curL_phaA = (int16_t)(offsetrl1 - adc_buffer.rl1)*2;
-    int16_t curL_phaB = (int16_t)(offsetrl2 - adc_buffer.rl2)*2;
+    int16_t curL_phaB = (int16_t)(offsetrl1 - adc_buffer.rl1)*2;
+    int16_t curL_phaA = (int16_t)(offsetrl2 - adc_buffer.rl2)*2;
     int16_t curL_DC   = (int16_t)(offsetdcl - adc_buffer.dcl);
 
     // Get Right motor currents
