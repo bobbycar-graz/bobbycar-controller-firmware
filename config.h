@@ -2,10 +2,10 @@
 
 #define PWM_FREQ            16000     // PWM frequency in Hz
 #define DEAD_TIME              48     // PWM deadtime
-#ifdef VARIANT_TRANSPOTTER
-  #define DELAY_IN_MAIN_LOOP    2
+#ifdef MOTOR_TEST
+  #define DELAY_IN_MAIN_LOOP    10
 #else
-  #define DELAY_IN_MAIN_LOOP    5     // in ms. default 5. it is independent of all the timing critical stuff. do not touch if you do not know what you are doing.
+  #define DELAY_IN_MAIN_LOOP    5
 #endif
 #define TIMEOUT                 5     // number of wrong / missing input commands before emergency off
 #define A2BIT_CONV             50     // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc

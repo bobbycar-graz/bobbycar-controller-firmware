@@ -212,14 +212,46 @@ int main()
 //#define UART_DMA_CHANNEL DMA1_Channel2
     //UART3_Init();
 
+#ifdef MOTOR_TEST
+    int pwm = 0;
+    int8_t dir = 1;
+#else
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+#endif
 
     for (;;) {
         HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
 
+#ifndef MOTOR_TEST
         parseCommand();
+#endif
 
         timeout = 0;
+
+#ifdef MOTOR_TEST
+        left.state.enable = false;
+        left.state.ctrlMod = ControlMode::Voltage;
+        left.state.ctrlTyp = ControlType::Sinusoidal;
+        left.state.pwm = pwm;
+        left.state.iMotMax = 1;
+
+        right.state.enable = true;
+        right.state.ctrlMod = ControlMode::Voltage;
+        right.state.ctrlTyp = ControlType::Sinusoidal;
+        right.state.pwm = pwm;
+        right.state.iMotMax = 1;
+
+        constexpr auto pwmMax = 500;
+
+        pwm += dir;
+        if (pwm > pwmMax) {
+          pwm = pwmMax;
+          dir = -1;
+        } else if (pwm < -pwmMax) {
+          pwm = -pwmMax;
+          dir = 1;
+        }
+#endif
 
         // ####### CALC BOARD TEMPERATURE #######
         filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
@@ -228,6 +260,7 @@ int main()
 
         sendFeedback();
 
+#ifdef FEATURE_BUTTON
         if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
         {
             left.state.enable = right.state.enable = 0;           // disable motors
@@ -240,6 +273,7 @@ int main()
                 poweroff();                                         // release power-latch
             }
         }
+#endif
 
         main_loop_counter++;
         timeout++;
@@ -323,8 +357,15 @@ void updateMotors()
     constexpr int32_t pwm_margin = 100;        /* This margin allows to always have a window in the PWM signal for proper Phase currents measurement */
 
     /* Make sure to stop BOTH motors in case of an error */
-    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && right.rtY.z_errCode == 0;
-    const bool enableRFin = right.state.enable && left.rtY.z_errCode == 0 && right.rtY.z_errCode == 0;
+
+#ifdef FEATURE_IGNORE_OTHER_MOTOR
+    constexpr bool ignoreOtherMotor = false;
+#else
+    constexpr bool ignoreOtherMotor = true;
+#endif
+
+    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
+    const bool enableRFin = right.state.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
 
     // ========================= LEFT MOTOR ============================
     // Get hall sensors values
