@@ -1,6 +1,6 @@
 #pragma once
 
-#define PWM_FREQ            16000     // PWM frequency in Hz
+#define PWM_FREQ            10000     // PWM frequency in Hz
 #define DEAD_TIME              48     // PWM deadtime
 #ifdef VARIANT_TRANSPOTTER
   #define DELAY_IN_MAIN_LOOP    2

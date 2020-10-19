@@ -215,24 +215,24 @@ int main()
     int pwm = 0;
     int8_t dir = 1;
 
-    const int pwmMax = 1000;
+    const int pwmMax = 400;
 
     for (;;) {
-        HAL_Delay(DELAY_IN_MAIN_LOOP * 2); //delay in ms
+        HAL_Delay(DELAY_IN_MAIN_LOOP ); //delay in ms
 
         timeout = 0;
 
-        left.state.enable = false;
-        left.state.ctrlMod = ControlMode::Voltage;
-        left.state.ctrlTyp = ControlType::Sinusoidal;
+        left.state.enable = true;
+        left.state.ctrlMod = ControlMode::Voltage;//FieldOrientedControl
+        left.state.ctrlTyp = ControlType::FieldOrientedControl;//Sinusoidal;
         left.state.pwm = pwm;
-        left.state.iMotMax = 1;
+        left.state.iMotMax = 10;
 
         right.state.enable = true;
         right.state.ctrlMod = ControlMode::Voltage;
-        right.state.ctrlTyp = ControlType::Sinusoidal;
+        right.state.ctrlTyp = ControlType::FieldOrientedControl;
         right.state.pwm = pwm;
-        right.state.iMotMax = 1;
+        right.state.iMotMax = 10;
 
         pwm += dir;
         if (pwm > pwmMax) {
@@ -288,13 +288,13 @@ void updateMotors()
     }
 
     // Get Left motor currents
-    int16_t curL_phaA = (int16_t)(offsetrl1 - adc_buffer.rl1);
-    int16_t curL_phaB = (int16_t)(offsetrl2 - adc_buffer.rl2);
+    int16_t curL_phaA = (int16_t)(offsetrl1 - adc_buffer.rl1)*2;
+    int16_t curL_phaB = (int16_t)(offsetrl2 - adc_buffer.rl2)*2;
     int16_t curL_DC   = (int16_t)(offsetdcl - adc_buffer.dcl);
 
     // Get Right motor currents
-    int16_t curR_phaB = (int16_t)(offsetrr1 - adc_buffer.rr1);
-    int16_t curR_phaC = (int16_t)(offsetrr2 - adc_buffer.rr2);
+    int16_t curR_phaB = (int16_t)(offsetrr1 - adc_buffer.rr1)*2;
+    int16_t curR_phaC = (int16_t)(offsetrr2 - adc_buffer.rr2)*2;
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
     const int8_t chopL = std::abs(curL_DC) > (left.state.iDcMax * A2BIT_CONV);
@@ -792,7 +792,7 @@ void MX_TIM_Init() {
     sConfigOC.OCMode       = TIM_OCMODE_PWM1;
     sConfigOC.Pulse        = 0;
     sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_LOW;
+    sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
@@ -833,7 +833,7 @@ void MX_TIM_Init() {
     sConfigOC.OCMode       = TIM_OCMODE_PWM1;
     sConfigOC.Pulse        = 0;
     sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_LOW;
+    sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
