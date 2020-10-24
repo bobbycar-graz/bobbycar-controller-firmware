@@ -34,6 +34,14 @@ extern "C" {
 extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
 }
 
+#ifdef FEATURE_CAN
+#include "can.h"
+#include "can_feedc0de.h"
+
+CANFeedc0de can_feedc0de;
+
+#endif
+
 namespace {
 TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
@@ -103,8 +111,6 @@ struct {
 
 Command command;
 Feedback feedback;
-
-
 
 void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
 
@@ -222,6 +228,11 @@ int main()
     int pwm = 0;
     int8_t dir = 1;
 #else
+
+    can_config();
+    MODIFY_REG(RCC->CR, RCC_CR_HSITRIM, (0x1aU << RCC_CR_HSITRIM_Pos));
+
+#ifndef FEATURE_CAN
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
 
@@ -265,6 +276,7 @@ int main()
         board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
         sendFeedback();
+        can_feedc0de.poll();
 
 #ifdef FEATURE_BUTTON
         if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
@@ -1049,6 +1061,9 @@ void parseCommand()
 {
     bool any_parsed{false};
 
+#ifdef FEATURE_CAN
+    any_parsed = can_feedc0de.get_command(command);
+#else
     for (int i = 0; i < 1; i++)
     {
         if (command.start != Command::VALID_HEADER)
@@ -1058,6 +1073,13 @@ void parseCommand()
         if (command.checksum != checksum)
             continue;
 
+        any_parsed = true;
+        break;
+    }
+#endif
+
+    if (any_parsed)
+    {
         left.state = command.left;
         right.state = command.right;
 
@@ -1070,12 +1092,8 @@ void parseCommand()
 
         command.start     = Command::INVALID_HEADER; // Change the Start Frame for timeout detection in the next cycle
         timeoutCntSerial  = 0;                       // Reset the timeout counter
-
-        any_parsed = true;
-        break;
     }
-
-    if (!any_parsed)
+    else
     {
         if (timeoutCntSerial++ >= 100) // Timeout qualification
         {
@@ -1087,58 +1105,69 @@ void parseCommand()
 
             HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
 
+#ifndef FEATURE_CAN
             // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
             if (main_loop_counter % 25 == 0)
             {
                 HAL_UART_DMAStop(&huart2);
                 HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
             }
+#endif
         }
     }
 }
 
 void sendFeedback()
 {
-    if (main_loop_counter % 50 == 0) {    // Send data periodically
-        if(UART_DMA_CHANNEL->CNDTR == 0) {
-            feedback.start = Feedback::VALID_HEADER;
+    // Send data periodically
+    if (main_loop_counter % 50 != 0)
+        return;
 
-            feedback.left.angle = left.rtY.a_elecAngle;
-            feedback.right.angle = right.rtY.a_elecAngle;
+#ifndef FEATURE_CAN
+    if (UART_DMA_CHANNEL->CNDTR != 0)
+        return;
+#endif
 
-            feedback.left.speed = left.rtY.n_mot;
-            feedback.right.speed = right.rtY.n_mot;
+    feedback.start = Feedback::VALID_HEADER;
 
-            feedback.left.error = left.rtY.z_errCode;
-            feedback.right.error = right.rtY.z_errCode;
+    feedback.left.angle = left.rtY.a_elecAngle;
+    feedback.right.angle = right.rtY.a_elecAngle;
 
-            feedback.left.current = left.rtU.i_DCLink;
-            feedback.right.current = right.rtU.i_DCLink;
+    feedback.left.speed = left.rtY.n_mot;
+    feedback.right.speed = right.rtY.n_mot;
 
-            feedback.left.chops = left.chops;
-            feedback.right.chops = right.chops;
-            left.chops = 0;
-            right.chops = 0;
+    feedback.left.error = left.rtY.z_errCode;
+    feedback.right.error = right.rtY.z_errCode;
 
-            feedback.left.hallA = left.rtU.b_hallA;
-            feedback.left.hallB = left.rtU.b_hallB;
-            feedback.left.hallC = left.rtU.b_hallC;
-            feedback.right.hallA = right.rtU.b_hallA;
-            feedback.right.hallB = right.rtU.b_hallB;
-            feedback.right.hallC = right.rtU.b_hallC;
+    feedback.left.current = left.rtU.i_DCLink;
+    feedback.right.current = right.rtU.i_DCLink;
 
-            feedback.batVoltage = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
-            feedback.boardTemp = board_temp_deg_c;
-            feedback.timeoutCntSerial = timeoutCntSerial;
+    feedback.left.chops = left.chops;
+    feedback.right.chops = right.chops;
+    left.chops = 0;
+    right.chops = 0;
 
-            feedback.checksum = calculateChecksum(feedback);
+    feedback.left.hallA = left.rtU.b_hallA;
+    feedback.left.hallB = left.rtU.b_hallB;
+    feedback.left.hallC = left.rtU.b_hallC;
+    feedback.right.hallA = right.rtU.b_hallA;
+    feedback.right.hallB = right.rtU.b_hallB;
+    feedback.right.hallC = right.rtU.b_hallC;
 
-            UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
-            UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
-            UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
-            UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
-        }
-    }
+    feedback.batVoltage = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
+    feedback.boardTemp = board_temp_deg_c;
+    feedback.timeoutCntSerial = timeoutCntSerial;
+
+    feedback.checksum = calculateChecksum(feedback);
+
+#ifdef FEATURE_CAN
+    can_feedc0de.send_feedback(feedback);
+#else
+    UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
+    UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
+    UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
+    UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
+#endif
 }
 
 } // anonymous namespace

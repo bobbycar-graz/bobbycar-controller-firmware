@@ -21,7 +21,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
 
 project(bobbycar-controller-firmware ASM C CXX)
 
-add_definitions(-DUSE_HAL_DRIVER -DSTM32F103xE)
+add_definitions(-DUSE_HAL_DRIVER -DSTM32F103xE -DFEATURE_CAN)
 
 include_directories(
     .
@@ -54,6 +54,7 @@ add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_can.c
 
     bobbycar-foc-model/BLDC_controller.h
     bobbycar-foc-model/BLDC_controller.c
@@ -68,6 +69,8 @@ add_executable(firmware.elf
     config.h
     defines.h
     main.cpp
+    can.c
+    can_feedc0de.cpp
 )
 
 add_custom_command(OUTPUT firmware.hex
