@@ -165,7 +165,7 @@ int main()
     HAL_ADC_Start(&hadc2);
 
     left.rtP = rtP_Left;
-    left.rtP.b_selPhaABCurrMeas  = 1;            // Left motor measured current phases = {iA, iB} -> do NOT change
+    left.rtP.b_selPhaABCurrMeas  = 0;            // Left motor measured current phases = {iA, iB} -> do NOT change
     left.rtP.z_ctrlTypSel        = uint8_t(left.state.ctrlTyp);
     left.rtP.b_diagEna           = DIAG_ENA;
     left.rtP.i_max               = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
