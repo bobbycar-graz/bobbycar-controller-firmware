@@ -236,16 +236,16 @@ int main()
 
 #ifdef MOTOR_TEST
         left.state.enable = true;
-        left.state.ctrlMod = ControlMode::Torque;
+        left.state.ctrlMod = ControlMode::Voltage;
         left.state.ctrlTyp = ControlType::FieldOrientedControl;
         left.state.pwm = pwm;
-        left.state.iMotMax = 10;
+        left.state.iMotMax = 2;
 
         right.state.enable = true;
-        right.state.ctrlMod = ControlMode::Torque;
+        right.state.ctrlMod = ControlMode::Voltage;
         right.state.ctrlTyp = ControlType::FieldOrientedControl;
         right.state.pwm = pwm;
-        right.state.iMotMax = 10;
+        right.state.iMotMax = 2;
 
         constexpr auto pwmMax = 500;
 

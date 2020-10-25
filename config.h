@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef PETERS_PLATINE
-#define PWM_FREQ            10000     // PWM frequency in Hz
+#define PWM_FREQ            12000     // PWM frequency in Hz
 #else
 #define PWM_FREQ            16000     // PWM frequency in Hz
 #endif
