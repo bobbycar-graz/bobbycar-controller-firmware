@@ -38,7 +38,12 @@ extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
 #include "can.h"
 #include "can_feedc0de.h"
 
-CANFeedc0de can_feedc0de;
+CANFeedc0de<Feedback, Command> can_feedc0de(
+    CAN_ID_FEEDBACK_BOARD_TO_STW(BOARD_INDEX),
+    CAN_ID_FEEDBACK_STW_TO_BOARD(BOARD_INDEX),
+    CAN_ID_COMMAND_BOARD_TO_STW(BOARD_INDEX),
+    CAN_ID_COMMAND_STW_TO_BOARD(BOARD_INDEX)
+);
 
 #endif
 
@@ -234,7 +239,9 @@ int main()
 
 #ifndef FEATURE_CAN
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
-#endif
+#endif // FEATURE_CAN
+
+#endif // MOTOR_TEST
 
     for (;;) {
         HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
@@ -1062,7 +1069,7 @@ void parseCommand()
     bool any_parsed{false};
 
 #ifdef FEATURE_CAN
-    any_parsed = can_feedc0de.get_command(command);
+    any_parsed = can_feedc0de.get(command);
 #else
     for (int i = 0; i < 1; i++)
     {
@@ -1161,7 +1168,7 @@ void sendFeedback()
     feedback.checksum = calculateChecksum(feedback);
 
 #ifdef FEATURE_CAN
-    can_feedc0de.send_feedback(feedback);
+    can_feedc0de.send(feedback);
 #else
     UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
     UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);

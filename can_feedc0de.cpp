@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstring>
 
+#include "config.h"
 #include "protocol.h"
 #include "can_fc.h"
 
@@ -10,60 +11,90 @@
 
 static_assert((sizeof(Command) + FC_CHUNK_SIZE - 1) / FC_CHUNK_SIZE < 15);
 
-void CANFeedc0de::poll()
+template <class Sent, class Received>
+void CANFeedc0de<Sent, Received>::poll()
 {
-  if (feedc0de_fcs.tx_pending())
-    feedc0de_fcs.tx();
-
-  if (feedc0de_fcr.ack_pending())
-    feedc0de_fcr.ack();
+  feedc0de_fcs.tx();
+  feedc0de_fcr.ack();
 }
 
-void CANFeedc0de::send_feedback(const Feedback& in)
+template <class Sent, class Received>
+void CANFeedc0de<Sent, Received>::send(const Sent& in)
 {
-  feedback = in;
-  feedc0de_fcs.reset(((uint8_t*)&feedback) + 2, sizeof(feedback) - 4);
+  sent = in;
+  feedc0de_fcs.reset(((uint8_t*)&sent) + 2, sizeof(sent) - 4);
 }
 
-bool CANFeedc0de::get_command(Command& out)
+template <class Sent, class Received>
+bool CANFeedc0de<Sent, Received>::get(Received& out)
 {
   if (!feedc0de_fcr.transfer_finished())
     return false;
 
-  out = command;
-  feedc0de_fcr.reset(((uint8_t*)&command) + 2, sizeof(command) - 4);
+  out = received;
+  feedc0de_fcr.reset(((uint8_t*)&received) + 2, sizeof(received) - 4);
 
   return true;
 }
 
-void CANFeedc0de::handle_frame(uint16_t id, uint8_t* frame, uint8_t len)
+template <class Sent, class Received>
+bool CANFeedc0de<Sent, Received>::handle_frame(uint16_t id, uint8_t* frame, uint8_t len)
 {
-  switch (id)
+  if (id == fcs_rx_can_id)
   {
-  case CAN_ID_FEEDBACK_STW_TO_BACK:
     feedc0de_fcs.handle_frame(frame, len);
-    break;
-  case CAN_ID_COMMAND_STW_TO_BACK:
-    feedc0de_fcr.handle_frame(frame, len);
-    break;
-  default:
-    Error_Handler();
+    return true;
   }
+  else if (id == fcr_rx_can_id)
+  {
+    feedc0de_fcr.handle_frame(frame, len);
+    return true;
+  }
+
+  return false;
 }
+
+#ifdef CAN_FEEDCODE_STW
+template class CANFeedc0de<Command, Feedback>;
 
 extern "C"
 {
 
 void can_feedc0de_handle_frame(uint16_t id, uint8_t* frame, uint8_t len)
 {
-  extern CANFeedc0de can_feedc0de;
-  can_feedc0de.handle_frame(id, frame, len);
+  extern CANFeedc0de<Command, Feedback> can_instances[NUM_BOARDS_MAX];
+
+  bool handled = false;
+  for (size_t i = 0; i < NUM_BOARDS_MAX; i++)
+  {
+    if (can_instances[i].handle_frame(id, frame, len))
+      handled = true;
+  }
+
+  if (!handled)
+    Error_Handler();
+}
+
+}
+
+#else
+template class CANFeedc0de<Feedback, Command>;
+
+extern "C"
+{
+
+void can_feedc0de_handle_frame(uint16_t id, uint8_t* frame, uint8_t len)
+{
+  extern CANFeedc0de<Feedback, Command> can_feedc0de;
+  if (!can_feedc0de.handle_frame(id, frame, len))
+    Error_Handler();
 }
 
 void can_feedc0de_poll()
 {
-  extern CANFeedc0de can_feedc0de;
+  extern CANFeedc0de<Feedback, Command> can_feedc0de;
   can_feedc0de.poll();
 }
 
 }
+#endif

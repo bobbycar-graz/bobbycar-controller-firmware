@@ -91,28 +91,6 @@ static uint8_t dlc_to_len(uint32_t dlc)
   return dlc;
 }
 
-/**
-  * @brief  Main program.
-  * @param  None
-  * @retval None
-  */
-void can_test(void)
-{
-  TxHeader.DLC = 2;
-  TxHeader.StdId = 0x321;
-
-  /* Set the data to be transmitted */
-  TxData[0] = ubKeyNumber + 1;
-  TxData[1] = 0xAD;
-
-  /* Start the Transmission process */
-  if (HAL_CAN_AddTxMessage(&CanHandle, &TxHeader, TxData, &TxMailbox) != HAL_OK)
-  {
-    /* Transmission request Error */
-    Error_Handler();
-  }
-}
-
 void can_tx(uint16_t id, const uint8_t* data, uint8_t len)
 {
   TxHeader.StdId = id;
@@ -123,7 +101,7 @@ void can_tx(uint16_t id, const uint8_t* data, uint8_t len)
   }
 
   /* Start the Transmission process */
-  if (HAL_CAN_AddTxMessage(&CanHandle, &TxHeader, (uint8_t*)data, &TxMailbox) != HAL_OK)
+  if (HAL_CAN_AddTxMessage(&CanHandle, &TxHeader, (uint8_t *)data, &TxMailbox) != HAL_OK)
   {
     /* Transmission request Error */
     Error_Handler();
@@ -147,7 +125,7 @@ static void __NO_RETURN Error_Handler(void)
   * @param  None
   * @retval None
   */
-void can_config(void)
+void can_init(void)
 {
   CAN_FilterTypeDef  sFilterConfig;
 
@@ -180,9 +158,9 @@ void can_config(void)
   sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
   sFilterConfig.FilterIdHigh = 0x0000;
-  sFilterConfig.FilterIdLow = 0x0310;
+  sFilterConfig.FilterIdLow = CAN_ID_BOARD | (BOARD_INDEX << 4) | CAN_DIRECTION_STW_TO_BOARD;
   sFilterConfig.FilterMaskIdHigh = 0x0000;
-  sFilterConfig.FilterMaskIdLow = 0x07F8;
+  sFilterConfig.FilterMaskIdLow = 0x07F1;
   sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
   sFilterConfig.FilterActivation = ENABLE;
   sFilterConfig.SlaveStartFilterBank = 14;
@@ -259,8 +237,8 @@ static void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
   }
 
   if (RxHeader.IDE == CAN_ID_STD &&
-      (RxHeader.StdId == CAN_ID_COMMAND_STW_TO_BACK ||
-       RxHeader.StdId == CAN_ID_FEEDBACK_STW_TO_BACK))
+      (RxHeader.StdId == CAN_ID_COMMAND_STW_TO_BOARD(BOARD_INDEX) ||
+       RxHeader.StdId == CAN_ID_FEEDBACK_STW_TO_BOARD(BOARD_INDEX)))
   {
     can_feedc0de_handle_frame(RxHeader.StdId, RxData, dlc_to_len(RxHeader.DLC));
   }
