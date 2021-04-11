@@ -144,7 +144,7 @@ void can_init(void)
   CanHandle.Init.Mode = CAN_MODE_NORMAL;
   CanHandle.Init.SyncJumpWidth = CAN_SJW_1TQ;
   CanHandle.Init.TimeSeg1 = CAN_BS1_6TQ;
-  CanHandle.Init.TimeSeg2 = CAN_BS2_5TQ;
+  CanHandle.Init.TimeSeg2 = CAN_BS2_1TQ;
   CanHandle.Init.Prescaler = 4;
 
   if (HAL_CAN_Init(&CanHandle) != HAL_OK)

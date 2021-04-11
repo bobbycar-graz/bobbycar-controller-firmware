@@ -229,13 +229,14 @@ int main()
 //#define UART_DMA_CHANNEL DMA1_Channel2
     //UART3_Init();
 
+#ifdef FEATURE_CAN
+    can_init();
+#endif
+
 #ifdef MOTOR_TEST
     int pwm = 0;
     int8_t dir = 1;
 #else
-
-    can_config();
-    MODIFY_REG(RCC->CR, RCC_CR_HSITRIM, (0x1aU << RCC_CR_HSITRIM_Pos));
 
 #ifndef FEATURE_CAN
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
