@@ -10,10 +10,11 @@ SET(CMAKE_SYSTEM_NAME Generic)
 
 set(COMMON_FLAGS "-mcpu=cortex-m3 -mthumb -Wall -fdata-sections -ffunction-sections")
 set(CMAKE_ASM_FLAGS "${COMMON_FLAGS} -x assembler-with-cpp")
-set(CMAKE_C_FLAGS "${COMMON_FLAGS} -std=gnu11")
-set(CMAKE_CXX_FLAGS "${COMMON_FLAGS} -std=c++17")
+set(CMAKE_C_FLAGS "${COMMON_FLAGS}")
+set(CMAKE_CXX_FLAGS "${COMMON_FLAGS}")
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
 
 set(COMMON_LINKER_FLAGS "-specs=nosys.specs -T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH.ld -lc -lm -lnosys -lstdc++ -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref")
 set(CMAKE_EXE_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
@@ -34,9 +35,11 @@ include_directories(
 )
 
 #add_definitions(-DMOTOR_TEST)
-#add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
-add_definitions(-DFEATURE_BUTTON)
-#add_definitions(-DPETERS_PLATINE)
+add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
+#add_definitions(-DFEATURE_BUTTON)
+add_definitions(-DPETERS_PLATINE)
+add_definitions(-DHUARN2)
+#add_definitions(-DHUARN3)
 
 add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
@@ -83,7 +86,8 @@ add_custom_target(firmware ALL
 
 add_custom_target(flash
                   COMMAND st-flash --reset write firmware.bin 0x8000000
-                  SOURCES firmware.bin)
+                  SOURCES firmware.bin
+                  DEPENDS firmware.bin)
 
 add_custom_target(debug
                   COMMAND openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg)

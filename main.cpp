@@ -39,14 +39,22 @@ TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
+#ifdef HUARN2
 UART_HandleTypeDef huart2;
-//UART_HandleTypeDef huart3;
+#endif
+#ifdef HUARN3
+UART_HandleTypeDef huart3;
+#endif
 
+#ifdef HUARN2
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
+#endif
 
-//DMA_HandleTypeDef hdma_usart3_rx;
-//DMA_HandleTypeDef hdma_usart3_tx;
+#ifdef HUARN3
+DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart3_tx;
+#endif
 
 volatile struct {
     uint16_t dcr;
@@ -110,9 +118,13 @@ void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
 
 void SystemClock_Config();
 
+#ifdef HUARN2
 void UART2_Init();
+#endif
 
-//void UART3_Init();
+#ifdef HUARN3
+void UART3_Init();
+#endif
 
 void MX_GPIO_Init();
 
@@ -213,16 +225,23 @@ int main()
     }
     buzzer.state.freq = 0;
 
-#define UART_DMA_CHANNEL DMA1_Channel7
+#ifdef HUARN2
     UART2_Init();
-//#define UART_DMA_CHANNEL DMA1_Channel2
-    //UART3_Init();
+#endif
+#ifdef HUARN3
+    UART3_Init();
+#endif
 
 #ifdef MOTOR_TEST
     int pwm = 0;
     int8_t dir = 1;
 #else
+#ifdef HUARN2
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+#endif
+#ifdef HUARN3
+    HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
+#endif
 #endif
 
     for (;;) {
@@ -247,7 +266,7 @@ int main()
         right.state.pwm = pwm;
         right.state.iMotMax = 2;
 
-        constexpr auto pwmMax = 500;
+        constexpr auto pwmMax = 250;
 
         pwm += dir;
         if (pwm > pwmMax) {
@@ -351,8 +370,8 @@ void updateMotors()
 
     //create square wave for buzzer
     buzzer.timer++;
-    if (buzzer.state.freq != 0 && (buzzer.timer / 5000) % (buzzer.state.pattern + 1) == 0) {
-      if (buzzer.timer % buzzer.state.freq == 0) {
+    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0) {
+      if (buzzer.timer % (buzzer.state.freq/2) == 0) {
         HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
       }
     } else {
@@ -533,6 +552,7 @@ void SystemClock_Config()
     HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
+#ifdef HUARN2
 void UART2_Init()
 {
     /* The code below is commented out - otwerwise Serial Receive does not work */
@@ -562,6 +582,7 @@ void UART2_Init()
     huart2.Init.OverSampling  = UART_OVERSAMPLING_16;
     huart2.Init.Mode        = UART_MODE_TX_RX;
     HAL_UART_Init(&huart2);
+
     USART2->CR3 |= USART_CR3_DMAT;  // | USART_CR3_DMAR | USART_CR3_OVRDIS;
 
     GPIO_InitTypeDef GPIO_InitStruct;
@@ -597,97 +618,90 @@ void UART2_Init()
     hdma_usart2_tx.Init.Priority              = DMA_PRIORITY_LOW;
     HAL_DMA_Init(&hdma_usart2_tx);
 
-      __HAL_LINKDMA(&huart2, hdmatx, hdma_usart2_tx);
+    __HAL_LINKDMA(&huart2, hdmatx, hdma_usart2_tx);
 
-      DMA1_Channel7->CPAR     = uint64_t(&(USART2->DR));
-      DMA1_Channel7->CNDTR    = 0;
-      DMA1->IFCR              = DMA_IFCR_CTCIF7 | DMA_IFCR_CHTIF7 | DMA_IFCR_CGIF7;
+    DMA1_Channel7->CPAR     = uint64_t(&(USART2->DR));
+    DMA1_Channel7->CNDTR    = 0;
+    DMA1->IFCR              = DMA_IFCR_CTCIF7 | DMA_IFCR_CHTIF7 | DMA_IFCR_CGIF7;
 }
+#endif
 
-//void UART3_Init() {
+#ifdef HUARN3
+void UART3_Init()
+{
+    /* The code below is commented out - otwerwise Serial Receive does not work */
+    // #ifdef CONTROL_SERIAL_USART3
+    //   /* DMA1_Channel3_IRQn interrupt configuration */
+    //   HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 5, 3);
+    //   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
+    //   /* DMA1_Channel2_IRQn interrupt configuration */
+    //   HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 5, 2);
+    //   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+    // #endif
 
-//  /* The code below is commented out - otwerwise Serial Receive does not work */
-//  // #ifdef CONTROL_SERIAL_USART3
-//  //   /* DMA1_Channel3_IRQn interrupt configuration */
-//  //   HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 5, 3);
-//  //   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
-//  //   /* DMA1_Channel2_IRQn interrupt configuration */
-//  //   HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 5, 2);
-//  //   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
-//  // #endif
+    // Disable serial interrupt - it is not needed
+    HAL_NVIC_DisableIRQ(DMA1_Channel3_IRQn);  // Rx Channel
+    HAL_NVIC_DisableIRQ(DMA1_Channel2_IRQn);  // Tx Channel
 
-//  // Disable serial interrupt - it is not needed
-//  HAL_NVIC_DisableIRQ(DMA1_Channel3_IRQn);  // Rx Channel
-//  HAL_NVIC_DisableIRQ(DMA1_Channel2_IRQn);  // Tx Channel
+    __HAL_RCC_DMA1_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_USART3_CLK_ENABLE();
 
-//  __HAL_RCC_DMA1_CLK_ENABLE();
-//  __HAL_RCC_GPIOB_CLK_ENABLE();
-//  __HAL_RCC_USART3_CLK_ENABLE();
+    huart3.Instance             = USART3;
+    huart3.Init.BaudRate        = USART3_BAUD;
+    huart3.Init.WordLength      = USART3_WORDLENGTH;
+    huart3.Init.StopBits        = UART_STOPBITS_1;
+    huart3.Init.Parity          = UART_PARITY_NONE;
+    huart3.Init.HwFlowCtl       = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling    = UART_OVERSAMPLING_16;
+    huart3.Init.Mode          = UART_MODE_TX_RX;
+    HAL_UART_Init(&huart3);
 
-//  huart3.Instance             = USART3;
-//  huart3.Init.BaudRate        = USART3_BAUD;
-//  huart3.Init.WordLength      = USART3_WORDLENGTH;
-//  huart3.Init.StopBits        = UART_STOPBITS_1;
-//  huart3.Init.Parity          = UART_PARITY_NONE;
-//  huart3.Init.HwFlowCtl       = UART_HWCONTROL_NONE;
-//  huart3.Init.OverSampling    = UART_OVERSAMPLING_16;
-//  #if defined(CONTROL_SERIAL_USART3)
-//    huart3.Init.Mode          = UART_MODE_TX_RX;
-//  #elif defined(DEBUG_SERIAL_USART3)
-//    huart3.Init.Mode          = UART_MODE_TX;
-//  #endif
-//  HAL_UART_Init(&huart3);
+    USART3->CR3 |= USART_CR3_DMAT;  // | USART_CR3_DMAR | USART_CR3_OVRDIS;
 
-//  #if defined(FEEDBACK_SERIAL_USART3) || defined(DEBUG_SERIAL_USART3)
-//    USART3->CR3 |= USART_CR3_DMAT;  // | USART_CR3_DMAR | USART_CR3_OVRDIS;
-//  #endif
+    GPIO_InitTypeDef GPIO_InitStruct;
+    GPIO_InitStruct.Pin         = GPIO_PIN_10;
+    GPIO_InitStruct.Pull        = GPIO_PULLUP;
+    GPIO_InitStruct.Mode        = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed       = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-//  GPIO_InitTypeDef GPIO_InitStruct;
-//  GPIO_InitStruct.Pin         = GPIO_PIN_10;
-//  GPIO_InitStruct.Pull        = GPIO_PULLUP;
-//  GPIO_InitStruct.Mode        = GPIO_MODE_AF_PP;
-//  GPIO_InitStruct.Speed       = GPIO_SPEED_FREQ_HIGH;
-//  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin       = GPIO_PIN_11;
+    GPIO_InitStruct.Mode      = GPIO_MODE_INPUT;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-//  #ifdef CONTROL_SERIAL_USART3
-//    GPIO_InitStruct.Pin       = GPIO_PIN_11;
-//    GPIO_InitStruct.Mode      = GPIO_MODE_INPUT;
-//    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    /* Peripheral DMA init*/
+    hdma_usart3_rx.Instance                   = DMA1_Channel3;
+    hdma_usart3_rx.Init.Direction             = DMA_PERIPH_TO_MEMORY;
+    hdma_usart3_rx.Init.PeriphInc             = DMA_PINC_DISABLE;
+    hdma_usart3_rx.Init.MemInc                = DMA_MINC_ENABLE;
+    hdma_usart3_rx.Init.PeriphDataAlignment   = DMA_PDATAALIGN_BYTE;
+    hdma_usart3_rx.Init.MemDataAlignment      = DMA_MDATAALIGN_BYTE;
+    hdma_usart3_rx.Init.Mode                  = DMA_CIRCULAR; //DMA_NORMAL;
+    hdma_usart3_rx.Init.Priority              = DMA_PRIORITY_LOW;
+    HAL_DMA_Init(&hdma_usart3_rx);
+    __HAL_LINKDMA(&huart3, hdmarx, hdma_usart3_rx);
 
-//    /* Peripheral DMA init*/
-//    hdma_usart3_rx.Instance                   = DMA1_Channel3;
-//    hdma_usart3_rx.Init.Direction             = DMA_PERIPH_TO_MEMORY;
-//    hdma_usart3_rx.Init.PeriphInc             = DMA_PINC_DISABLE;
-//    hdma_usart3_rx.Init.MemInc                = DMA_MINC_ENABLE;
-//    hdma_usart3_rx.Init.PeriphDataAlignment   = DMA_PDATAALIGN_BYTE;
-//    hdma_usart3_rx.Init.MemDataAlignment      = DMA_MDATAALIGN_BYTE;
-//    hdma_usart3_rx.Init.Mode                  = DMA_CIRCULAR; //DMA_NORMAL;
-//    hdma_usart3_rx.Init.Priority              = DMA_PRIORITY_LOW;
-//    HAL_DMA_Init(&hdma_usart3_rx);
-//    __HAL_LINKDMA(&huart3, hdmarx, hdma_usart3_rx);
-//  #endif
+    hdma_usart3_tx.Instance                     = DMA1_Channel2;
+    hdma_usart3_tx.Init.Direction               = DMA_MEMORY_TO_PERIPH;
+    hdma_usart3_tx.Init.PeriphInc               = DMA_PINC_DISABLE;
+    hdma_usart3_tx.Init.MemInc                  = DMA_MINC_ENABLE;
+    hdma_usart3_tx.Init.PeriphDataAlignment     = DMA_PDATAALIGN_BYTE;
+    hdma_usart3_tx.Init.MemDataAlignment        = DMA_MDATAALIGN_BYTE;
+    hdma_usart3_tx.Init.Mode                    = DMA_NORMAL;
+    hdma_usart3_tx.Init.Priority                = DMA_PRIORITY_LOW;
+    HAL_DMA_Init(&hdma_usart3_tx);
 
-//  hdma_usart3_tx.Instance                     = DMA1_Channel2;
-//  hdma_usart3_tx.Init.Direction               = DMA_MEMORY_TO_PERIPH;
-//  hdma_usart3_tx.Init.PeriphInc               = DMA_PINC_DISABLE;
-//  hdma_usart3_tx.Init.MemInc                  = DMA_MINC_ENABLE;
-//  hdma_usart3_tx.Init.PeriphDataAlignment     = DMA_PDATAALIGN_BYTE;
-//  hdma_usart3_tx.Init.MemDataAlignment        = DMA_MDATAALIGN_BYTE;
-//  hdma_usart3_tx.Init.Mode                    = DMA_NORMAL;
-//  hdma_usart3_tx.Init.Priority                = DMA_PRIORITY_LOW;
-//  HAL_DMA_Init(&hdma_usart3_tx);
+    __HAL_LINKDMA(&huart3, hdmatx, hdma_usart3_tx);
 
-//  #ifdef CONTROL_SERIAL_USART3
-//    __HAL_LINKDMA(&huart3, hdmatx, hdma_usart3_tx);
-//  #endif
-//  #if defined(FEEDBACK_SERIAL_USART3) || defined(DEBUG_SERIAL_USART3)
-//    DMA1_Channel2->CPAR     = (uint32_t) & (USART3->DR);
-//    DMA1_Channel2->CNDTR    = 0;
-//    DMA1->IFCR              = DMA_IFCR_CTCIF2 | DMA_IFCR_CHTIF2 | DMA_IFCR_CGIF2;
-//  #endif
-//}
+    DMA1_Channel2->CPAR     = (uint32_t) & (USART3->DR);
+    DMA1_Channel2->CNDTR    = 0;
+    DMA1->IFCR              = DMA_IFCR_CTCIF2 | DMA_IFCR_CHTIF2 | DMA_IFCR_CGIF2;
+}
+#endif
 
-void MX_GPIO_Init() {
+void MX_GPIO_Init()
+{
     GPIO_InitTypeDef GPIO_InitStruct;
 
     /* GPIO Ports Clock Enable */
@@ -804,7 +818,8 @@ void MX_GPIO_Init() {
     HAL_GPIO_Init(RIGHT_TIM_WL_PORT, &GPIO_InitStruct);
 }
 
-void MX_TIM_Init() {
+void MX_TIM_Init()
+{
     __HAL_RCC_TIM1_CLK_ENABLE();
     __HAL_RCC_TIM8_CLK_ENABLE();
 
@@ -917,7 +932,8 @@ void MX_TIM_Init() {
     __HAL_TIM_ENABLE(&htim_right);
 }
 
-void MX_ADC1_Init() {
+void MX_ADC1_Init()
+{
     ADC_MultiModeTypeDef multimode;
     ADC_ChannelConfTypeDef sConfig;
 
@@ -984,7 +1000,8 @@ void MX_ADC1_Init() {
 }
 
 /* ADC2 init function */
-void MX_ADC2_Init() {
+void MX_ADC2_Init()
+{
     ADC_ChannelConfTypeDef sConfig;
 
     __HAL_RCC_ADC2_CLK_ENABLE();
@@ -1031,7 +1048,8 @@ void MX_ADC2_Init() {
     __HAL_ADC_ENABLE(&hadc2);
 }
 
-void poweroff() {
+void poweroff()
+{
   //  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
         buzzer.state.pattern = 0;
         left.state.enable = right.state.enable = 0;
@@ -1090,8 +1108,14 @@ void parseCommand()
             // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
             if (main_loop_counter % 25 == 0)
             {
+#ifdef HUARN2
                 HAL_UART_DMAStop(&huart2);
                 HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+#endif
+#ifdef HUARN3
+                HAL_UART_DMAStop(&huart3);
+                HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
+#endif
             }
         }
     }
@@ -1099,8 +1123,17 @@ void parseCommand()
 
 void sendFeedback()
 {
-    if (main_loop_counter % 50 == 0) {    // Send data periodically
-        if(UART_DMA_CHANNEL->CNDTR == 0) {
+    if (main_loop_counter % 50 == 0)    // Send data periodically
+    {
+#ifdef HUARN2
+#define UART_DMA_CHANNEL DMA1_Channel7
+#endif
+#ifdef HUARN3
+#define UART_DMA_CHANNEL DMA1_Channel2
+#endif
+
+        if (UART_DMA_CHANNEL->CNDTR == 0)
+        {
             feedback.start = Feedback::VALID_HEADER;
 
             feedback.left.angle = left.rtY.a_elecAngle;
@@ -1134,8 +1167,10 @@ void sendFeedback()
             feedback.checksum = calculateChecksum(feedback);
 
             UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
-            UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
-            UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
+            //UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
+            //UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
+            UART_DMA_CHANNEL->CNDTR   = 21;
+            UART_DMA_CHANNEL->CMAR    = uint64_t((const char *)"Sending feedback...\r\n");
             UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
         }
     }
@@ -1150,38 +1185,39 @@ void sendFeedback()
 /**
 * @brief This function handles Non maskable interrupt.
 */
-extern "C" void NMI_Handler() {
-  /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
+extern "C" void NMI_Handler()
+{
+    /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
 
-  /* USER CODE END NonMaskableInt_IRQn 0 */
-  /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
+    /* USER CODE END NonMaskableInt_IRQn 0 */
+    /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
 
-  /* USER CODE END NonMaskableInt_IRQn 1 */
+    /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
 /**
 * @brief This function handles Hard fault interrupt.
 */
-extern "C" void HardFault_Handler() {
-  /* USER CODE BEGIN HardFault_IRQn 0 */
+extern "C" void HardFault_Handler()
+{
+    /* USER CODE BEGIN HardFault_IRQn 0 */
 
-  /* USER CODE END HardFault_IRQn 0 */
-  while(1) {
-  }
-  /* USER CODE BEGIN HardFault_IRQn 1 */
+    /* USER CODE END HardFault_IRQn 0 */
+    while (true);
+    /* USER CODE BEGIN HardFault_IRQn 1 */
 
-  /* USER CODE END HardFault_IRQn 1 */
+    /* USER CODE END HardFault_IRQn 1 */
 }
 
 /**
 * @brief This function handles Memory management fault.
 */
-extern "C" void MemManage_Handler() {
+extern "C" void MemManage_Handler()
+{
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
 
   /* USER CODE END MemoryManagement_IRQn 0 */
-  while(1) {
-  }
+  while (true);
   /* USER CODE BEGIN MemoryManagement_IRQn 1 */
 
   /* USER CODE END MemoryManagement_IRQn 1 */
@@ -1190,59 +1226,62 @@ extern "C" void MemManage_Handler() {
 /**
 * @brief This function handles Prefetch fault, memory access fault.
 */
-extern "C" void BusFault_Handler() {
-  /* USER CODE BEGIN BusFault_IRQn 0 */
+extern "C" void BusFault_Handler()
+{
+    /* USER CODE BEGIN BusFault_IRQn 0 */
 
-  /* USER CODE END BusFault_IRQn 0 */
-  while(1) {
-  }
-  /* USER CODE BEGIN BusFault_IRQn 1 */
+    /* USER CODE END BusFault_IRQn 0 */
+    while (true);
+    /* USER CODE BEGIN BusFault_IRQn 1 */
 
-  /* USER CODE END BusFault_IRQn 1 */
+    /* USER CODE END BusFault_IRQn 1 */
 }
 
 /**
 * @brief This function handles Undefined instruction or illegal state.
 */
-extern "C" void UsageFault_Handler() {
-  /* USER CODE BEGIN UsageFault_IRQn 0 */
+extern "C" void UsageFault_Handler()
+{
+    /* USER CODE BEGIN UsageFault_IRQn 0 */
 
-  /* USER CODE END UsageFault_IRQn 0 */
-  while(1) {
-  }
-  /* USER CODE BEGIN UsageFault_IRQn 1 */
+    /* USER CODE END UsageFault_IRQn 0 */
+    while (true);
+    /* USER CODE BEGIN UsageFault_IRQn 1 */
 
-  /* USER CODE END UsageFault_IRQn 1 */
+    /* USER CODE END UsageFault_IRQn 1 */
 }
 
 /**
 * @brief This function handles System service call via SWI instruction.
 */
-extern "C" void SVC_Handler() {
-  /* USER CODE BEGIN SVCall_IRQn 0 */
+extern "C" void SVC_Handler()
+{
+    /* USER CODE BEGIN SVCall_IRQn 0 */
 
-  /* USER CODE END SVCall_IRQn 0 */
-  /* USER CODE BEGIN SVCall_IRQn 1 */
+    /* USER CODE END SVCall_IRQn 0 */
+    /* USER CODE BEGIN SVCall_IRQn 1 */
 
-  /* USER CODE END SVCall_IRQn 1 */
+    /* USER CODE END SVCall_IRQn 1 */
 }
 
 /**
 * @brief This function handles Debug monitor.
 */
-extern "C" void DebugMon_Handler() {
-  /* USER CODE BEGIN DebugMonitor_IRQn 0 */
+extern "C" void DebugMon_Handler()
+{
+    /* USER CODE BEGIN DebugMonitor_IRQn 0 */
 
-  /* USER CODE END DebugMonitor_IRQn 0 */
-  /* USER CODE BEGIN DebugMonitor_IRQn 1 */
+    /* USER CODE END DebugMonitor_IRQn 0 */
+    /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
-  /* USER CODE END DebugMonitor_IRQn 1 */
+    /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
 /**
 * @brief This function handles Pendable request for system service.
 */
-extern "C" void PendSV_Handler() {
+extern "C" void PendSV_Handler()
+{
   /* USER CODE BEGIN PendSV_IRQn 0 */
 
   /* USER CODE END PendSV_IRQn 0 */
@@ -1251,24 +1290,16 @@ extern "C" void PendSV_Handler() {
   /* USER CODE END PendSV_IRQn 1 */
 }
 
-/**
-* @brief This function handles System tick timer.
-*/
-#ifdef CONTROL_PPM
-extern "C" void PPM_SysTick_Callback();
-#endif
+extern "C" void SysTick_Handler()
+{
+    /* USER CODE BEGIN SysTick_IRQn 0 */
 
-extern "C" void SysTick_Handler() {
-  /* USER CODE BEGIN SysTick_IRQn 0 */
+    /* USER CODE END SysTick_IRQn 0 */
+    HAL_IncTick();
+    HAL_SYSTICK_IRQHandler();
+    /* USER CODE BEGIN SysTick_IRQn 1 */
 
-  /* USER CODE END SysTick_IRQn 0 */
-  HAL_IncTick();
-  HAL_SYSTICK_IRQHandler();
-  /* USER CODE BEGIN SysTick_IRQn 1 */
-#ifdef CONTROL_PPM
-  PPM_SysTick_Callback();
-#endif
-  /* USER CODE END SysTick_IRQn 1 */
+    /* USER CODE END SysTick_IRQn 1 */
 }
 
 // =================================
@@ -1279,15 +1310,16 @@ extern "C" void DMA1_Channel1_IRQHandler()
     updateMotors();
 }
 
+#ifdef HUARN2
 extern "C" void DMA1_Channel6_IRQHandler()
 {
-  /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
+    /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
 
-  /* USER CODE END DMA1_Channel4_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart2_rx);
-  /* USER CODE BEGIN DMA1_Channel4_IRQn 1 */
+    /* USER CODE END DMA1_Channel4_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart2_rx);
+    /* USER CODE BEGIN DMA1_Channel4_IRQn 1 */
 
-  /* USER CODE END DMA1_Channel4_IRQn 1 */
+    /* USER CODE END DMA1_Channel4_IRQn 1 */
 }
 
 /**
@@ -1295,11 +1327,42 @@ extern "C" void DMA1_Channel6_IRQHandler()
 */
 extern "C" void DMA1_Channel7_IRQHandler()
 {
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
+    /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
 
-  /* USER CODE END DMA1_Channel5_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart2_tx);
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
+    /* USER CODE END DMA1_Channel5_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart2_tx);
+    /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
 
-  /* USER CODE END DMA1_Channel5_IRQn 1 */
+    /* USER CODE END DMA1_Channel5_IRQn 1 */
 }
+#endif
+
+#ifdef HUARN3
+/**
+* @brief This function handles DMA1 channel2 global interrupt.
+*/
+extern "C" void DMA1_Channel2_IRQHandler()
+{
+    /* USER CODE BEGIN DMA1_Channel2_IRQn 0 */
+
+    /* USER CODE END DMA1_Channel2_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart3_tx);
+    /* USER CODE BEGIN DMA1_Channel2_IRQn 1 */
+
+    /* USER CODE END DMA1_Channel2_IRQn 1 */
+}
+
+/**
+* @brief This function handles DMA1 channel3 global interrupt.
+*/
+extern "C" void DMA1_Channel3_IRQHandler()
+{
+    /* USER CODE BEGIN DMA1_Channel3_IRQn 0 */
+
+    /* USER CODE END DMA1_Channel3_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart3_rx);
+    /* USER CODE BEGIN DMA1_Channel3_IRQn 1 */
+
+    /* USER CODE END DMA1_Channel3_IRQn 1 */
+}
+#endif
