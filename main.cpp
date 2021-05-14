@@ -310,7 +310,8 @@ void updateMotors()
 {
     DMA1->IFCR = DMA_IFCR_CTCIF1;
 
-    if(offsetcount < 2000) {  // calibrate ADC offsets
+    if (offsetcount < 2000) // calibrate ADC offsets
+    {
         offsetcount++;
         offsetrl1 = (adc_buffer.rl1 + offsetrl1) / 2;
         offsetrl2 = (adc_buffer.rl2 + offsetrl2) / 2;
@@ -321,7 +322,8 @@ void updateMotors()
         return;
     }
 
-    if (buzzer.timer % 1000 == 0) {  // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
+    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
+    {
         filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
         batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
     }
