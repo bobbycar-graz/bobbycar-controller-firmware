@@ -57,6 +57,69 @@ DMA_HandleTypeDef hdma_usart3_rx;
 DMA_HandleTypeDef hdma_usart3_tx;
 #endif
 
+#ifdef FEATURE_CAN
+CAN_HandleTypeDef     CanHandle;
+
+/* Definition for CANx clock resources */
+#define CANx                           CAN1
+#define CANx_CLK_ENABLE()              __HAL_RCC_CAN1_CLK_ENABLE()
+#define CANx_GPIO_CLK_ENABLE()         __HAL_RCC_GPIOB_CLK_ENABLE()
+
+#define CANx_FORCE_RESET()             __HAL_RCC_CAN1_FORCE_RESET()
+#define CANx_RELEASE_RESET()           __HAL_RCC_CAN1_RELEASE_RESET()
+
+/* Definition for CANx Pins */
+#define CANx_TX_PIN                    GPIO_PIN_9
+#define CANx_TX_GPIO_PORT              GPIOB
+#define CANx_RX_PIN                    GPIO_PIN_8
+#define CANx_RX_GPIO_PORT              GPIOB
+
+/* Definition for CANx AFIO Remap */
+#define CANx_AFIO_REMAP_CLK_ENABLE()   __HAL_RCC_AFIO_CLK_ENABLE()
+#define CANx_AFIO_REMAP_RX_TX_PIN()    __HAL_AFIO_REMAP_CAN1_2()
+
+/* Definition for CAN's NVIC */
+#define CANx_RX_IRQn                   USB_LP_CAN1_RX0_IRQn
+#define CANx_RX_IRQHandler             USB_LP_CAN1_RX0_IRQHandler
+#define CANx_TX_IRQn                   USB_HP_CAN1_TX_IRQn
+#define CANx_TX_IRQHandler             USB_HP_CAN1_TX_IRQHandler
+#endif
+
+#ifdef LOG_TO_SERIAL
+char logBuffer[512];
+#endif
+
+
+template<std::size_t formatLength, typename ... Targs>
+void myPrintf(const char (&format)[formatLength], Targs ... args)
+{
+#ifdef LOG_TO_SERIAL
+#ifdef HUARN2
+#define UART_DMA_CHANNEL DMA1_Channel7
+#endif
+#ifdef HUARN3
+#define UART_DMA_CHANNEL DMA1_Channel2
+#endif
+
+    while (UART_DMA_CHANNEL->CNDTR != 0);
+
+    char processedFormat[formatLength+2];
+    std::copy(std::begin(format), std::end(format), std::begin(processedFormat));
+    processedFormat[formatLength-1] = '\r';
+    processedFormat[formatLength] = '\n';
+    processedFormat[formatLength+1] = '\0';
+
+    const auto size = std::snprintf(logBuffer, sizeof(logBuffer), processedFormat, args ...);
+    if (size < 0)
+        return;
+
+    UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
+    UART_DMA_CHANNEL->CNDTR   = size;
+    UART_DMA_CHANNEL->CMAR    = uint64_t(logBuffer);
+    UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
+#endif
+}
+
 volatile struct {
     uint16_t dcr;
     uint16_t dcl;
@@ -127,6 +190,10 @@ void UART2_Init();
 void UART3_Init();
 #endif
 
+#ifdef FEATURE_CAN
+void CAN_Init();
+#endif
+
 void MX_GPIO_Init();
 
 void MX_TIM_Init();
@@ -143,6 +210,10 @@ void parseCommand();
 
 #ifdef FEATURE_SERIAL_FEEDBACK
 void sendFeedback();
+#endif
+
+#ifdef FEATURE_CAN
+void sendCanFeedback();
 #endif
 
 } // anonymous namespace
@@ -241,6 +312,10 @@ int main()
     UART3_Init();
 #endif
 
+#ifdef FEATURE_CAN
+    CAN_Init();
+#endif
+
 #ifdef MOTOR_TEST
     int pwm = 0;
     int8_t dir = 1;
@@ -296,8 +371,13 @@ int main()
         board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
 #ifdef FEATURE_SERIAL_FEEDBACK
-        if (main_loop_counter % 50 != 0) // Send data periodically
+        if (main_loop_counter % 50 == 0) // Send data periodically
             sendFeedback();
+#endif
+
+#ifdef FEATURE_CAN
+        if (main_loop_counter % 100 == 0)
+            sendCanFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -736,6 +816,222 @@ void UART3_Init()
 }
 #endif
 
+#ifdef FEATURE_CAN
+void CAN_MspInit(CAN_HandleTypeDef *hcan);
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan);
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan);
+void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle);
+void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan);
+
+void CAN_Init()
+{
+    myPrintf("CAN_Init() called");
+
+    CAN_FilterTypeDef  sFilterConfig;
+
+    /* Configure the CAN peripheral */
+    CanHandle.Instance = CANx;
+
+    CanHandle.MspInitCallback = CAN_MspInit;
+    CanHandle.MspDeInitCallback = CAN_MspDeInit;
+
+    CanHandle.Init.TimeTriggeredMode = DISABLE;
+    CanHandle.Init.AutoBusOff = ENABLE;
+    CanHandle.Init.AutoWakeUp = DISABLE;
+    CanHandle.Init.AutoRetransmission = ENABLE;
+    CanHandle.Init.ReceiveFifoLocked = DISABLE;
+    CanHandle.Init.TransmitFifoPriority = DISABLE;
+    CanHandle.Init.Mode = CAN_MODE_NORMAL;
+    CanHandle.Init.SyncJumpWidth = CAN_SJW_1TQ;
+    CanHandle.Init.TimeSeg1 = CAN_BS1_6TQ;
+    CanHandle.Init.TimeSeg2 = CAN_BS2_1TQ;
+    CanHandle.Init.Prescaler = 4;
+
+    if (const auto result = HAL_CAN_Init(&CanHandle); result == HAL_OK)
+        myPrintf("HAL_CAN_Init() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_Init() failed with %i", result);
+        while (true);
+    }
+
+    /* Configure the CAN Filter */
+    sFilterConfig.FilterBank = 0;
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000; // TODO
+    sFilterConfig.FilterIdLow = 0b11111111111; // TODO
+    sFilterConfig.FilterMaskIdHigh = 0x0000; // TODO
+    sFilterConfig.FilterMaskIdLow = 0b11111111111; // TODO
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.SlaveStartFilterBank = 14;
+
+    if (const auto result = HAL_CAN_ConfigFilter(&CanHandle, &sFilterConfig); result == HAL_OK)
+        myPrintf("HAL_CAN_ConfigFilter() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_ConfigFilter() failed with %i", result);
+        while (true);
+    }
+
+    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID, CAN_RxFifo0MsgPendingCallback); result == HAL_OK)
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID failed with %i", result);
+        while (true);
+    }
+
+    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID failed with %i", result);
+        while (true);
+    }
+
+    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID failed with %i", result);
+        while (true);
+    }
+
+    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID failed with %i", result);
+        while (true);
+    }
+
+    /* Start the CAN peripheral */
+    if (const auto result = HAL_CAN_Start(&CanHandle); result == HAL_OK)
+        myPrintf("HAL_CAN_Start() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_Start() failed with %i", result);
+        while (true);
+    }
+
+    /* Activate CAN RX notification */
+    if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_RX_FIFO0_MSG_PENDING); result == HAL_OK)
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_RX_FIFO0_MSG_PENDING succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_RX_FIFO0_MSG_PENDING failed with %i", result);
+        while (true);
+    }
+
+    /* Activate CAN TX notification */
+    if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_TX_MAILBOX_EMPTY); result == HAL_OK)
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY failed with %i", result);
+        while (true);
+    }
+}
+
+void CAN_MspInit(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_MspInit() called");
+
+    GPIO_InitTypeDef   GPIO_InitStruct;
+
+    /*##-1- Enable peripherals and GPIO Clocks #################################*/
+    /* CAN1 Periph clock enable */
+    CANx_CLK_ENABLE();
+    /* Enable GPIO clock ****************************************/
+    CANx_GPIO_CLK_ENABLE();
+    /* Enable AFIO clock and Remap CAN PINs to PB8 and PB9*******/
+    CANx_AFIO_REMAP_CLK_ENABLE();
+    CANx_AFIO_REMAP_RX_TX_PIN();
+
+    /*##-2- Configure peripheral GPIO ##########################################*/
+    /* CAN1 TX GPIO pin configuration */
+    GPIO_InitStruct.Pin = CANx_TX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(CANx_TX_GPIO_PORT, &GPIO_InitStruct);
+
+    /* CAN1 RX GPIO pin configuration */
+    GPIO_InitStruct.Pin = CANx_RX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(CANx_RX_GPIO_PORT, &GPIO_InitStruct);
+
+    /*##-3- Configure the NVIC #################################################*/
+    /* NVIC configuration for CAN1 Reception complete interrupt */
+    HAL_NVIC_SetPriority(CANx_RX_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(CANx_RX_IRQn);
+
+    HAL_NVIC_SetPriority(CANx_TX_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(CANx_TX_IRQn);
+}
+
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_MspDeInit() called");
+
+    /*##-1- Reset peripherals ##################################################*/
+    CANx_FORCE_RESET();
+    CANx_RELEASE_RESET();
+
+    /*##-2- Disable peripherals and GPIO Clocks ################################*/
+    /* De-initialize the CAN1 TX GPIO pin */
+    HAL_GPIO_DeInit(CANx_TX_GPIO_PORT, CANx_TX_PIN);
+    /* De-initialize the CAN1 RX GPIO pin */
+    HAL_GPIO_DeInit(CANx_RX_GPIO_PORT, CANx_RX_PIN);
+
+    /*##-4- Disable the NVIC for CAN reception #################################*/
+    HAL_NVIC_DisableIRQ(CANx_RX_IRQn);
+}
+
+void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
+{
+    myPrintf("CAN_RxFifo0MsgPendingCallback() called");
+
+    CAN_RxHeaderTypeDef header;
+    uint8_t buf[8];
+    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
+    {
+        myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
+        while (true);
+    }
+
+    //if (header.IDE == CAN_ID_STD &&
+    //    (header.StdId == CAN_ID_COMMAND_STW_TO_BOARD(BOARD_INDEX) ||
+    //     header.StdId == CAN_ID_FEEDBACK_STW_TO_BOARD(BOARD_INDEX)))
+    //{
+    //    can_feedc0de_handle_frame(header.StdId, RxData, dlc_to_len(header.DLC));
+    //}
+
+    // slightly yucky, but we don't want to block inside the IRQ handler
+    //if (HAL_CAN_GetTxMailboxesFreeLevel(CanHandle) >= 2)
+    //{
+    //    can_feedc0de_poll();
+    //}
+}
+
+void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_TxMailboxCompleteCallback() called");
+
+    // slightly yucky, but we don't want to block inside the IRQ handler
+    //if (HAL_CAN_GetTxMailboxesFreeLevel(hcan) >= 2)
+    //{
+    //    can_feedc0de_poll();
+    //}
+}
+#endif
+
 void MX_GPIO_Init()
 {
     GPIO_InitTypeDef GPIO_InitStruct;
@@ -1138,7 +1434,7 @@ void parseCommand()
 
             left.state = right.state = {.enable=true};
 
-            buzzer.state = { 24, 1 };
+            //buzzer.state = { 24, 1 };
 
             HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
 
@@ -1208,6 +1504,36 @@ void sendFeedback()
     UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
     UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
     UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
+}
+#endif
+
+#ifdef FEATURE_CAN
+void sendCanFeedback()
+{
+    const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
+    myPrintf("sendCanFeedback() called (free=%u)", free);
+
+    if (free < 1)
+        return;
+
+    CAN_TxHeaderTypeDef TxHeader;
+    TxHeader.StdId = 0x321;
+    TxHeader.ExtId = 0x01;
+    TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.DLC = 2;
+    TxHeader.TransmitGlobalTime = DISABLE;
+
+    uint8_t buf[8];
+
+    static uint32_t TxMailbox;
+    if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &TxHeader, buf, &TxMailbox); result == HAL_OK)
+        myPrintf("HAL_CAN_AddTxMessage() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+        while (true);
+    }
 }
 #endif
 
@@ -1407,5 +1733,17 @@ extern "C" void DMA1_Channel3_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel3_IRQn 1 */
 
     /* USER CODE END DMA1_Channel3_IRQn 1 */
+}
+#endif
+
+#ifdef FEATURE_CAN
+extern "C" void CANx_RX_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&CanHandle);
+}
+
+extern "C" void CANx_TX_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&CanHandle);
 }
 #endif
