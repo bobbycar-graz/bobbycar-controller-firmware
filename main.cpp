@@ -184,6 +184,7 @@ int main()
     enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
 
     left.rtP = rtP_Left;
+    left.rtP.b_angleMeasEna      = 0;
 #ifdef PETERS_PLATINE
     left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;            // Left motor measured current phases = {iB, iC} -> do NOT change
 #else
@@ -198,12 +199,9 @@ int main()
     left.rtP.a_phaAdvMax         = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
     left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
     left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
-    left.rtM.defaultParam        = &left.rtP;
-    left.rtM.dwork               = &left.rtDW;
-    left.rtM.inputs              = &left.rtU;
-    left.rtM.outputs             = &left.rtY;
 
     right.rtP = rtP_Left;
+    right.rtP.b_angleMeasEna      = 0;
     right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;            // Right motor measured current phases = {iB, iC} -> do NOT change
     right.rtP.z_ctrlTypSel       = uint8_t(right.state.ctrlTyp);
     right.rtP.b_diagEna          = DIAG_ENA;
@@ -214,6 +212,12 @@ int main()
     right.rtP.a_phaAdvMax        = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
     right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
     right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
+
+    left.rtM.defaultParam        = &left.rtP;
+    left.rtM.dwork               = &left.rtDW;
+    left.rtM.inputs              = &left.rtU;
+    left.rtM.outputs             = &left.rtY;
+
     right.rtM.defaultParam       = &right.rtP;
     right.rtM.dwork              = &right.rtDW;
     right.rtM.inputs             = &right.rtU;
@@ -311,12 +315,62 @@ int main()
         }
 #endif
 
+        left.rtP.z_ctrlTypSel         = uint8_t(left.state.ctrlTyp);
+        left.rtP.i_max                = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        left.rtP.n_max                = left.state.nMotMax << 4;                       // fixdt(1,16,4)
+        left.rtP.id_fieldWeakMax      = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        left.rtP.a_phaAdvMax          = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
+
+        left.rtU.z_ctrlModReq = uint8_t(left.state.ctrlMod);
+        left.rtU.r_inpTgt     = left.state.pwm;
+
+        right.rtP.z_ctrlTypSel         = uint8_t(right.state.ctrlTyp);
+        right.rtP.i_max                = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        right.rtP.n_max                = right.state.nMotMax << 4;                       // fixdt(1,16,4)
+        right.rtP.id_fieldWeakMax      = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        right.rtP.a_phaAdvMax          = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
+
+        right.rtU.z_ctrlModReq  = uint8_t(right.state.ctrlMod);
+        right.rtU.r_inpTgt      = right.state.pwm;
+
         main_loop_counter++;
         timeout++;
     }
 }
 
 namespace {
+void updateBatVoltage()
+{
+    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
+    {
+        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
+        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
+    }
+}
+
+void updateBuzzer()
+{
+    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
+    {
+        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
+        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
+    }
+
+    //create square wave for buzzer
+    buzzer.timer++;
+    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0)
+    {
+        if (buzzer.timer % buzzer.state.freq == 0)
+        {
+            HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
+        }
+    }
+    else
+    {
+        HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
+    }
+}
+
 void updateMotors()
 {
     DMA1->IFCR = DMA_IFCR_CTCIF1;
@@ -331,12 +385,6 @@ void updateMotors()
         offsetdcl = (adc_buffer.dcl + offsetdcl) / 2;
         offsetdcr = (adc_buffer.dcr + offsetdcr) / 2;
         return;
-    }
-
-    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-    {
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
     }
 
     // Get Left motor currents
@@ -359,48 +407,27 @@ void updateMotors()
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
-    const int8_t chopL = std::abs(curL_DC) > (left.state.iDcMax * A2BIT_CONV);
+    const bool chopL = std::abs(curL_DC) > (left.state.iDcMax * A2BIT_CONV);
     if (chopL)
         left.chops++;
 
-    const int8_t chopR = std::abs(curR_DC) > (right.state.iDcMax * A2BIT_CONV);
+    const bool chopR = std::abs(curR_DC) > (right.state.iDcMax * A2BIT_CONV);
     if (chopR)
         right.chops++;
 
+    const auto timeoutVal = timeout.load();
+
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    const auto timeoutVal = timeout.load();
-    if (chopL || timeoutVal > TIMEOUT || left.state.enable == 0)
-    {
+    if (chopL || timeoutVal > TIMEOUT || !left.state.enable)
         LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
-    }
     else
-    {
         LEFT_TIM->BDTR |= TIM_BDTR_MOE;
-    }
 
-    if (chopR || timeoutVal > TIMEOUT || right.state.enable == 0)
-    {
+    if (chopR || timeoutVal > TIMEOUT || !right.state.enable)
         RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
-    }
     else
-    {
         RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
-    }
-
-    //create square wave for buzzer
-    buzzer.timer++;
-    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0)
-    {
-        if (buzzer.timer % buzzer.state.freq == 0)
-        {
-            HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
-        }
-    }
-    else
-    {
-        HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
-    }
 
     // ############################### MOTOR CONTROL ###############################
 
@@ -416,11 +443,13 @@ void updateMotors()
 
     /* Make sure to stop BOTH motors in case of an error */
 
+    constexpr bool ignoreOtherMotor =
 #ifdef FEATURE_IGNORE_OTHER_MOTOR
-    constexpr bool ignoreOtherMotor = false;
+        false
 #else
-    constexpr bool ignoreOtherMotor = true;
+        true
 #endif
+    ;
 
     const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
     const bool enableRFin = right.state.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
@@ -432,15 +461,7 @@ void updateMotors()
     bool hall_wl = !(LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN);
 
     /* Set motor inputs here */
-    left.rtP.z_ctrlTypSel         = uint8_t(left.state.ctrlTyp);
-    left.rtP.i_max                = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    left.rtP.n_max                = left.state.nMotMax << 4;                       // fixdt(1,16,4)
-    left.rtP.id_fieldWeakMax      = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    left.rtP.a_phaAdvMax          = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-
     left.rtU.b_motEna     = enableLFin;
-    left.rtU.z_ctrlModReq = uint8_t(left.state.ctrlMod);
-    left.rtU.r_inpTgt     = left.state.pwm;
     left.rtU.b_hallA      = hall_ul;
     left.rtU.b_hallB      = hall_vl;
     left.rtU.b_hallC      = hall_wl;
@@ -470,15 +491,7 @@ void updateMotors()
     bool hall_wr = !(RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
 
     /* Set motor inputs here */
-    right.rtP.z_ctrlTypSel         = uint8_t(right.state.ctrlTyp);
-    right.rtP.i_max                = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    right.rtP.n_max                = right.state.nMotMax << 4;                       // fixdt(1,16,4)
-    right.rtP.id_fieldWeakMax      = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    right.rtP.a_phaAdvMax          = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-
     right.rtU.b_motEna      = enableRFin;
-    right.rtU.z_ctrlModReq  = uint8_t(right.state.ctrlMod);
-    right.rtU.r_inpTgt      = right.state.pwm;
     right.rtU.b_hallA       = hall_ur;
     right.rtU.b_hallB       = hall_vr;
     right.rtU.b_hallC       = hall_wr;
@@ -1329,7 +1342,15 @@ extern "C" void SysTick_Handler()
 // =================================
 extern "C" void DMA1_Channel1_IRQHandler()
 {
+    /* USER CODE BEGIN DMA1_Channel1_IRQn 0 */
+
+    /* USER CODE END DMA1_Channel1_IRQn 0 */
     updateMotors();
+    updateBatVoltage();
+    updateBuzzer();
+    /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
+
+    /* USER CODE END DMA1_Channel1_IRQn 1 */
 }
 
 #ifdef HUARN2
