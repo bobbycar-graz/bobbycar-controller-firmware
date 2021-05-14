@@ -22,6 +22,7 @@
 */
 
 #include <algorithm>
+#include <atomic>
 
 #include "stm32f1xx_hal.h"
 
@@ -71,7 +72,7 @@ volatile struct {
 
 // ###############################################################################
 
-volatile uint32_t timeout;
+std::atomic<uint32_t> timeout;
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
 
 uint32_t main_loop_counter;
@@ -136,9 +137,13 @@ void MX_ADC2_Init();
 
 void poweroff();
 
+#ifdef FEATURE_SERIAL_CONTROL
 void parseCommand();
+#endif
 
+#ifdef FEATURE_SERIAL_FEEDBACK
 void sendFeedback();
+#endif
 
 } // anonymous namespace
 
@@ -235,7 +240,9 @@ int main()
 #ifdef MOTOR_TEST
     int pwm = 0;
     int8_t dir = 1;
-#else
+#endif
+
+#ifdef FEATURE_SERIAL_CONTROL
 #ifdef HUARN2
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
@@ -244,10 +251,11 @@ int main()
 #endif
 #endif
 
-    for (;;) {
+    while (true)
+    {
         HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
 
-#ifndef MOTOR_TEST
+#ifdef FEATURE_SERIAL_CONTROL
         parseCommand();
 #endif
 
@@ -283,7 +291,10 @@ int main()
         board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
         board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
-        sendFeedback();
+#ifdef FEATURE_SERIAL_FEEDBACK
+        if (main_loop_counter % 50 != 0) // Send data periodically
+            sendFeedback();
+#endif
 
 #ifdef FEATURE_BUTTON
         if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
@@ -358,16 +369,23 @@ void updateMotors()
 
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    if(chopL || timeout > TIMEOUT || left.state.enable == 0) {
-      LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
-    } else {
-      LEFT_TIM->BDTR |= TIM_BDTR_MOE;
+    const auto timeoutVal = timeout.load();
+    if (chopL || timeoutVal > TIMEOUT || left.state.enable == 0)
+    {
+        LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
+    }
+    else
+    {
+        LEFT_TIM->BDTR |= TIM_BDTR_MOE;
     }
 
-    if(chopR || timeout > TIMEOUT || right.state.enable == 0) {
-      RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
-    } else {
-      RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
+    if (chopR || timeoutVal > TIMEOUT || right.state.enable == 0)
+    {
+        RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
+    }
+    else
+    {
+        RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
     }
 
     //create square wave for buzzer
@@ -389,9 +407,8 @@ void updateMotors()
     static boolean_T OverrunFlag = false;
 
     /* Check for overrun */
-    if (OverrunFlag) {
+    if (OverrunFlag)
       return;
-    }
     OverrunFlag = true;
 
     constexpr int32_t pwm_res  = 64000000 / 2 / PWM_FREQ; // = 2000
@@ -1069,6 +1086,7 @@ void poweroff()
   //  }
 }
 
+#ifdef FEATURE_SERIAL_CONTROL
 void parseCommand()
 {
     bool any_parsed{false};
@@ -1126,11 +1144,11 @@ void parseCommand()
         }
     }
 }
+#endif
 
+#ifdef FEATURE_SERIAL_FEEDBACK
 void sendFeedback()
 {
-    if (main_loop_counter % 50 == 0)    // Send data periodically
-    {
 #ifdef HUARN2
 #define UART_DMA_CHANNEL DMA1_Channel7
 #endif
@@ -1138,49 +1156,47 @@ void sendFeedback()
 #define UART_DMA_CHANNEL DMA1_Channel2
 #endif
 
-        if (UART_DMA_CHANNEL->CNDTR == 0)
-        {
-            feedback.start = Feedback::VALID_HEADER;
+    if (UART_DMA_CHANNEL->CNDTR != 0)
+        return;
 
-            feedback.left.angle = left.rtY.a_elecAngle;
-            feedback.right.angle = right.rtY.a_elecAngle;
+    feedback.start = Feedback::VALID_HEADER;
 
-            feedback.left.speed = left.rtY.n_mot;
-            feedback.right.speed = right.rtY.n_mot;
+    feedback.left.angle = left.rtY.a_elecAngle;
+    feedback.right.angle = right.rtY.a_elecAngle;
 
-            feedback.left.error = left.rtY.z_errCode;
-            feedback.right.error = right.rtY.z_errCode;
+    feedback.left.speed = left.rtY.n_mot;
+    feedback.right.speed = right.rtY.n_mot;
 
-            feedback.left.current = left.rtU.i_DCLink;
-            feedback.right.current = right.rtU.i_DCLink;
+    feedback.left.error = left.rtY.z_errCode;
+    feedback.right.error = right.rtY.z_errCode;
 
-            feedback.left.chops = left.chops;
-            feedback.right.chops = right.chops;
-            left.chops = 0;
-            right.chops = 0;
+    feedback.left.current = left.rtU.i_DCLink;
+    feedback.right.current = right.rtU.i_DCLink;
 
-            feedback.left.hallA = left.rtU.b_hallA;
-            feedback.left.hallB = left.rtU.b_hallB;
-            feedback.left.hallC = left.rtU.b_hallC;
-            feedback.right.hallA = right.rtU.b_hallA;
-            feedback.right.hallB = right.rtU.b_hallB;
-            feedback.right.hallC = right.rtU.b_hallC;
+    feedback.left.chops = left.chops;
+    feedback.right.chops = right.chops;
+    left.chops = 0;
+    right.chops = 0;
 
-            feedback.batVoltage = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
-            feedback.boardTemp = board_temp_deg_c;
-            feedback.timeoutCntSerial = timeoutCntSerial;
+    feedback.left.hallA = left.rtU.b_hallA;
+    feedback.left.hallB = left.rtU.b_hallB;
+    feedback.left.hallC = left.rtU.b_hallC;
+    feedback.right.hallA = right.rtU.b_hallA;
+    feedback.right.hallB = right.rtU.b_hallB;
+    feedback.right.hallC = right.rtU.b_hallC;
 
-            feedback.checksum = calculateChecksum(feedback);
+    feedback.batVoltage = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
+    feedback.boardTemp = board_temp_deg_c;
+    feedback.timeoutCntSerial = timeoutCntSerial;
 
-            UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
-            //UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
-            //UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
-            UART_DMA_CHANNEL->CNDTR   = 21;
-            UART_DMA_CHANNEL->CMAR    = uint64_t((const char *)"Sending feedback...\r\n");
-            UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
-        }
-    }
+    feedback.checksum = calculateChecksum(feedback);
+
+    UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
+    UART_DMA_CHANNEL->CNDTR   = sizeof(feedback);
+    UART_DMA_CHANNEL->CMAR    = uint64_t(&feedback);
+    UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
 }
+#endif
 
 } // anonymous namespace
 
