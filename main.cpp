@@ -370,11 +370,15 @@ void updateMotors()
 
     //create square wave for buzzer
     buzzer.timer++;
-    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0) {
-      if (buzzer.timer % (buzzer.state.freq/2) == 0) {
-        HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
-      }
-    } else {
+    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0)
+    {
+        if (buzzer.timer % buzzer.state.freq == 0)
+        {
+            HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
+        }
+    }
+    else
+    {
         HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
     }
 
