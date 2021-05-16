@@ -337,7 +337,7 @@ int main()
 
     while (true)
     {
-        HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+        //HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
 
 #ifdef FEATURE_SERIAL_CONTROL
         parseCommand();
@@ -1529,7 +1529,7 @@ void sendFeedback()
 #ifdef FEATURE_CAN
 void sendCanFeedback()
 {
-    myPrintf("sendCanFeedback() called");
+    //myPrintf("sendCanFeedback() called");
 
     const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
     if (!free)
@@ -1553,7 +1553,9 @@ void sendCanFeedback()
         MotorControllerDcPhaB =     0b00000010100,
         MotorControllerDcPhaC =     0b00000011000,
         MotorControllerChops =      0b00000011100,
-        MotorControllerHall =       0b00000100000
+        MotorControllerHall =       0b00000100000,
+        MotorControllerVoltage =    0b00000100100,
+        MotorControllerTemp =       0b00000101000
     };
 
     enum { //                         .........v
@@ -1611,6 +1613,16 @@ void sendCanFeedback()
         MotorControllerFrontRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerFront | MotorControllerRight,
         MotorControllerBackLeftHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerLeft,
         MotorControllerBackRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerRight,
+
+        MotorControllerFrontLeftVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerBack | MotorControllerRight,
+
+        MotorControllerFrontLeftTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerBack | MotorControllerRight,
     };
 
     enum SendState : uint8_t {
@@ -1632,6 +1644,10 @@ void sendCanFeedback()
         RightChops,
         LeftHall,
         RightHall,
+        LeftVoltage,
+        RightVoltage,
+        LeftTemp,
+        RightTemp,
         Restart
     };
 
@@ -1662,24 +1678,28 @@ void sendCanFeedback()
 
     switch (sendState)
     {
-    case LeftDcLink:   myPrintf("LeftCurrent  free=%u", free); send(MotorControllerFrontLeftDcLink,  left. rtU.i_DCLink);    break;
-    case RightDcLink:  myPrintf("RightCurrent free=%u", free); send(MotorControllerFrontRightDcLink, right.rtU.i_DCLink);    break;
-    case LeftSpeed:    myPrintf("LeftSpeed    free=%u", free); send(MotorControllerFrontLeftSpeed,   left. rtY.n_mot);       break;
-    case RightSpeed:   myPrintf("RightSpeed   free=%u", free); send(MotorControllerFrontRightSpeed,  right.rtY.n_mot);       break;
-    case LeftError:    myPrintf("LeftError    free=%u", free); send(MotorControllerFrontLeftError,   left. rtY.z_errCode);   break;
-    case RightError:   myPrintf("RightError   free=%u", free); send(MotorControllerFrontRightError,  right.rtY.z_errCode);   break;
-    case LeftAngle:    myPrintf("LeftAngle    free=%u", free); send(MotorControllerFrontLeftAngle,   left. rtY.a_elecAngle); break;
-    case RightAngle:   myPrintf("RightAngle   free=%u", free); send(MotorControllerFrontRightAngle,  right.rtY.a_elecAngle); break;
-    case LeftDcPhaA:   myPrintf("LeftDcPhaA   free=%u", free); send(MotorControllerFrontLeftDcPhaA,  left. rtY.DC_phaA);     break;
-    case RightDcPhaA:  myPrintf("RightDcPhaA  free=%u", free); send(MotorControllerFrontRightDcPhaA, right.rtY.DC_phaA);     break;
-    case LeftDcPhaB:   myPrintf("LeftDcPhaB   free=%u", free); send(MotorControllerFrontLeftDcPhaB,  left. rtY.DC_phaB);     break;
-    case RightDcPhaB:  myPrintf("RightDcPhaB  free=%u", free); send(MotorControllerFrontRightDcPhaB, right.rtY.DC_phaB);     break;
-    case LeftDcPhaC:   myPrintf("LeftDcPhaC   free=%u", free); send(MotorControllerFrontLeftDcPhaC,  left. rtY.DC_phaC);     break;
-    case RightDcPhaC:  myPrintf("RightDcPhaC  free=%u", free); send(MotorControllerFrontRightDcPhaC, right.rtY.DC_phaC);     break;
-    case LeftChops:    myPrintf("LeftChops    free=%u", free); send(MotorControllerFrontLeftChops,   left. chops);           break;
-    case RightChops:   myPrintf("RightChops   free=%u", free); send(MotorControllerFrontRightChops,  right.chops);           break;
-    case LeftHall:     myPrintf("LeftHall     free=%u", free); send(MotorControllerFrontLeftHall,    left.hallBits());       break;
-    case RightHall:    myPrintf("RightHall    free=%u", free); send(MotorControllerFrontRightHall,   right.hallBits());      break;
+    case LeftDcLink:   /* myPrintf("LeftCurrent  free=%u", free); */ send(MotorControllerFrontLeftDcLink,   left. rtU.i_DCLink);    break;
+    case RightDcLink:  /* myPrintf("RightCurrent free=%u", free); */ send(MotorControllerFrontRightDcLink,  right.rtU.i_DCLink);    break;
+    case LeftSpeed:    /* myPrintf("LeftSpeed    free=%u", free); */ send(MotorControllerFrontLeftSpeed,    left. rtY.n_mot);       break;
+    case RightSpeed:   /* myPrintf("RightSpeed   free=%u", free); */ send(MotorControllerFrontRightSpeed,   right.rtY.n_mot);       break;
+    case LeftError:    /* myPrintf("LeftError    free=%u", free); */ send(MotorControllerFrontLeftError,    left. rtY.z_errCode);   break;
+    case RightError:   /* myPrintf("RightError   free=%u", free); */ send(MotorControllerFrontRightError,   right.rtY.z_errCode);   break;
+    case LeftAngle:    /* myPrintf("LeftAngle    free=%u", free); */ send(MotorControllerFrontLeftAngle,    left. rtY.a_elecAngle); break;
+    case RightAngle:   /* myPrintf("RightAngle   free=%u", free); */ send(MotorControllerFrontRightAngle,   right.rtY.a_elecAngle); break;
+    case LeftDcPhaA:   /* myPrintf("LeftDcPhaA   free=%u", free); */ send(MotorControllerFrontLeftDcPhaA,   left. rtY.DC_phaA);     break;
+    case RightDcPhaA:  /* myPrintf("RightDcPhaA  free=%u", free); */ send(MotorControllerFrontRightDcPhaA,  right.rtY.DC_phaA);     break;
+    case LeftDcPhaB:   /* myPrintf("LeftDcPhaB   free=%u", free); */ send(MotorControllerFrontLeftDcPhaB,   left. rtY.DC_phaB);     break;
+    case RightDcPhaB:  /* myPrintf("RightDcPhaB  free=%u", free); */ send(MotorControllerFrontRightDcPhaB,  right.rtY.DC_phaB);     break;
+    case LeftDcPhaC:   /* myPrintf("LeftDcPhaC   free=%u", free); */ send(MotorControllerFrontLeftDcPhaC,   left. rtY.DC_phaC);     break;
+    case RightDcPhaC:  /* myPrintf("RightDcPhaC  free=%u", free); */ send(MotorControllerFrontRightDcPhaC,  right.rtY.DC_phaC);     break;
+    case LeftChops:    /* myPrintf("LeftChops    free=%u", free); */ send(MotorControllerFrontLeftChops,    left. chops);           break;
+    case RightChops:   /* myPrintf("RightChops   free=%u", free); */ send(MotorControllerFrontRightChops,   right.chops);           break;
+    case LeftHall:     /* myPrintf("LeftHall     free=%u", free); */ send(MotorControllerFrontLeftHall,     left.hallBits());       break;
+    case RightHall:    /* myPrintf("RightHall    free=%u", free); */ send(MotorControllerFrontRightHall,    right.hallBits());      break;
+    case LeftVoltage:  /* myPrintf("LeftVoltage  free=%u", free); */ send(MotorControllerFrontLeftVoltage,  batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case RightVoltage: /* myPrintf("RightVoltage free=%u", free); */ send(MotorControllerFrontRightVoltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case LeftTemp:     /* myPrintf("LeftTemp     free=%u", free); */ send(MotorControllerFrontLeftTemp,     board_temp_deg_c);      break;
+    case RightTemp:    /* myPrintf("RightTemp    free=%u", free); */ send(MotorControllerFrontRightTemp,    board_temp_deg_c);      break;
     default: __builtin_unreachable();
     }
 
