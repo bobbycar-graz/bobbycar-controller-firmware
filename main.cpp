@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cstring>
 
 #include "stm32f1xx_hal.h"
 
@@ -166,6 +167,11 @@ struct {
     MotorState state;
 
     uint32_t chops = 0;
+
+    uint8_t hallBits() const
+    {
+        return (rtU.b_hallA ? 0 : 1) | (rtU.b_hallB ? 0 : 2) | (rtU.b_hallC ? 0 : 4);
+    }
 } left, right;
 
 struct {
@@ -370,13 +376,12 @@ int main()
         board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
 #ifdef FEATURE_SERIAL_FEEDBACK
-        if (main_loop_counter % 50 == 0) // Send data periodically
+        if (main_loop_counter % 50 == 0)
             sendFeedback();
 #endif
 
 #ifdef FEATURE_CAN
-        if (main_loop_counter % 100 == 0)
-            sendCanFeedback();
+        sendCanFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -859,10 +864,10 @@ void CAN_Init()
     sFilterConfig.FilterBank = 0;
     sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
     sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = 0x0000; // TODO
-    sFilterConfig.FilterIdLow = 0x0000; // TODO
-    sFilterConfig.FilterMaskIdHigh = 0x0000; // TODO
-    sFilterConfig.FilterMaskIdLow = 0x0000; // TODO
+    sFilterConfig.FilterIdHigh = 0xFFFF; // TODO
+    sFilterConfig.FilterIdLow = 0xFFFF; // TODO
+    sFilterConfig.FilterMaskIdHigh = 0xFFFF; // TODO
+    sFilterConfig.FilterMaskIdLow = 0xFFFF; // TODO
     sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
     sFilterConfig.FilterActivation = ENABLE;
     sFilterConfig.SlaveStartFilterBank = 14;
@@ -996,20 +1001,21 @@ void CAN_MspDeInit(CAN_HandleTypeDef *hcan)
 
 void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-    myPrintf("CAN_RxFifo0MsgPendingCallback() called");
+    //myPrintf("CAN_RxFifo0MsgPendingCallback() called");
 
     CAN_RxHeaderTypeDef header;
     uint8_t buf[8];
     if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result == HAL_OK)
     {
-        myPrintf("HAL_CAN_GetRxMessage() succeeded");
-        myPrintf("StdId = %x %u", header.StdId, header.StdId);
-        myPrintf("ExtId = %x %u", header.ExtId, header.ExtId);
-        myPrintf("IDE = %x %u", header.IDE, header.IDE);
-        myPrintf("RTR = %x %u", header.RTR, header.RTR);
-        myPrintf("DLC = %x %u", header.DLC, header.DLC);
-        myPrintf("Timestamp = %x %u", header.Timestamp, header.Timestamp);
-        myPrintf("FilterMatchIndex = %x %u", header.FilterMatchIndex, header.FilterMatchIndex);
+        myPrintf("StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
+            header.StdId, header.StdId,
+            header.ExtId, header.ExtId,
+            header.IDE, header.IDE,
+            header.RTR, header.RTR,
+            header.DLC, header.DLC,
+            header.Timestamp, header.Timestamp,
+            header.FilterMatchIndex, header.FilterMatchIndex
+        );
     }
     else
     {
@@ -1524,99 +1530,163 @@ void sendFeedback()
 void sendCanFeedback()
 {
     myPrintf("sendCanFeedback() called");
-    while (const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle))
-    {
-        myPrintf("free=%u", free);
 
-        if (free < 1)
-            return;
+    const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
+    if (!free)
+        return;
 
-        enum SendState : uint8_t {
-            LeftCurrent,
-            RightCurrent,
-            LeftSpeed,
-            RightSpeed,
-            Restart
-        };
+    enum { //                         vv
+        DeviceTypeMotorController = 0b00000000000
+    };
 
-        static union {
-            SendState sendState{LeftCurrent};
-            uint8_t asUint8;
-        };
+    enum { //                         ..vv
+        MotorControllerRec =        0b00000000000,
+        MotorControllerSend =       0b00010000000,
+    };
 
-        constexpr auto send = [](uint32_t addr, auto value){
-            CAN_TxHeaderTypeDef header;
-            header.StdId = addr;
-            header.ExtId = 0x01;
-            header.RTR = CAN_RTR_DATA;
-            header.IDE = CAN_ID_STD;
-            header.DLC = 8;
-            header.TransmitGlobalTime = DISABLE;
+    enum { //                         ....vvvvv
+        MotorControllerDcLink =     0b00000000000,
+        MotorControllerSpeed =      0b00000000100,
+        MotorControllerError =      0b00000001000,
+        MotorControllerAngle =      0b00000001100,
+        MotorControllerDcPhaA =     0b00000010000,
+        MotorControllerDcPhaB =     0b00000010100,
+        MotorControllerDcPhaC =     0b00000011000,
+        MotorControllerChops =      0b00000011100,
+        MotorControllerHall =       0b00000100000
+    };
 
-            uint8_t buf[8];
-            std::fill(std::begin(buf), std::end(buf), 0x69);
+    enum { //                         .........v
+        MotorControllerFront =      0b00000000000,
+        MotorControllerBack =       0b00000000010,
+    };
 
-            static uint32_t TxMailbox;
-            if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
-            {
-                myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
-                while (true);
-            }
-        };
+    enum { //                         ..........v
+        MotorControllerLeft =       0b00000000000,
+        MotorControllerRight =      0b00000000001,
+    };
 
-        enum { //                         vv
-            DeviceTypeMotorController = 0b00000000000
-        };
+    enum {
+        MotorControllerFrontLeftDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerBack | MotorControllerRight,
 
-        enum { //                         ..vv
-            MotorControllerRec =        0b00000000000,
-            MotorControllerSend =       0b00010000000,
-        };
+        MotorControllerFrontLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerBack | MotorControllerRight,
 
-        enum { //                         ....v
-            MotorControllerFront =      0b00000000000,
-            MotorControllerBack =       0b00001000000,
-        };
+        MotorControllerFrontLeftError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerBack | MotorControllerRight,
 
-        enum { //                         .....v
-            MotorControllerLeft =       0b00000000000,
-            MotorControllerRight =      0b00000100000,
-        };
+        MotorControllerFrontLeftAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerBack | MotorControllerRight,
 
-        enum { //                         ......vvvvv
-            MotorControllerCurrent =    0b00000000000,
-            MotorControllerSpeed =      0b00000000001
-        };
+        MotorControllerFrontLeftDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerBack | MotorControllerRight,
 
-        enum {
-            MotorControllerFrontLeftCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerLeft | MotorControllerFront,
-            MotorControllerFrontRightCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerRight | MotorControllerFront,
-            MotorControllerBackLeftCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerLeft | MotorControllerBack,
-            MotorControllerBackRightCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerRight | MotorControllerBack,
-            MotorControllerFrontLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerLeft | MotorControllerFront,
-            MotorControllerFrontRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerRight | MotorControllerFront,
-            MotorControllerBackLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerLeft | MotorControllerBack,
-            MotorControllerBackRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerRight | MotorControllerBack,
-        };
+        MotorControllerFrontLeftDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerBack | MotorControllerRight,
 
-        switch (sendState)
+        MotorControllerFrontLeftDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerBack | MotorControllerRight,
+
+        MotorControllerFrontLeftChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerBack | MotorControllerRight,
+
+        MotorControllerFrontLeftHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerFront | MotorControllerLeft,
+        MotorControllerFrontRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerFront | MotorControllerRight,
+        MotorControllerBackLeftHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerLeft,
+        MotorControllerBackRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerRight,
+    };
+
+    enum SendState : uint8_t {
+        LeftDcLink,
+        RightDcLink,
+        LeftSpeed,
+        RightSpeed,
+        LeftError,
+        RightError,
+        LeftAngle,
+        RightAngle,
+        LeftDcPhaA,
+        RightDcPhaA,
+        LeftDcPhaB,
+        RightDcPhaB,
+        LeftDcPhaC,
+        RightDcPhaC,
+        LeftChops,
+        RightChops,
+        LeftHall,
+        RightHall,
+        Restart
+    };
+
+    static union {
+        SendState sendState{LeftDcLink};
+        uint8_t asUint8;
+    };
+
+    constexpr auto send = [](uint32_t addr, auto value){
+        CAN_TxHeaderTypeDef header;
+        header.StdId = addr;
+        header.ExtId = 0x01;
+        header.RTR = CAN_RTR_DATA;
+        header.IDE = CAN_ID_STD;
+        header.DLC = sizeof(value);
+        header.TransmitGlobalTime = DISABLE;
+
+        uint8_t buf[8] {0};
+        std::memcpy(buf, &value, sizeof(value));
+
+        static uint32_t TxMailbox;
+        if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
         {
-#ifdef VORNE
-        case LeftCurrent:  send(0b00010000000, left.rtU.i_DCLink);  break;
-        case RightCurrent: send(0b00010100000, right.rtU.i_DCLink); break;
-#else
-        case LeftCurrent:  send(0b00011000000, left.rtU.i_DCLink);  break;
-        case RightCurrent: send(0b00011100000, right.rtU.i_DCLink); break;
-#endif
-        default:
-            __builtin_unreachable();
+            myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+            //while (true);
         }
+    };
 
-        asUint8++;
-
-        if (sendState >= Restart)
-            sendState = LeftCurrent;
+    switch (sendState)
+    {
+    case LeftDcLink:   myPrintf("LeftCurrent  free=%u", free); send(MotorControllerFrontLeftDcLink,  left. rtU.i_DCLink);    break;
+    case RightDcLink:  myPrintf("RightCurrent free=%u", free); send(MotorControllerFrontRightDcLink, right.rtU.i_DCLink);    break;
+    case LeftSpeed:    myPrintf("LeftSpeed    free=%u", free); send(MotorControllerFrontLeftSpeed,   left. rtY.n_mot);       break;
+    case RightSpeed:   myPrintf("RightSpeed   free=%u", free); send(MotorControllerFrontRightSpeed,  right.rtY.n_mot);       break;
+    case LeftError:    myPrintf("LeftError    free=%u", free); send(MotorControllerFrontLeftError,   left. rtY.z_errCode);   break;
+    case RightError:   myPrintf("RightError   free=%u", free); send(MotorControllerFrontRightError,  right.rtY.z_errCode);   break;
+    case LeftAngle:    myPrintf("LeftAngle    free=%u", free); send(MotorControllerFrontLeftAngle,   left. rtY.a_elecAngle); break;
+    case RightAngle:   myPrintf("RightAngle   free=%u", free); send(MotorControllerFrontRightAngle,  right.rtY.a_elecAngle); break;
+    case LeftDcPhaA:   myPrintf("LeftDcPhaA   free=%u", free); send(MotorControllerFrontLeftDcPhaA,  left. rtY.DC_phaA);     break;
+    case RightDcPhaA:  myPrintf("RightDcPhaA  free=%u", free); send(MotorControllerFrontRightDcPhaA, right.rtY.DC_phaA);     break;
+    case LeftDcPhaB:   myPrintf("LeftDcPhaB   free=%u", free); send(MotorControllerFrontLeftDcPhaB,  left. rtY.DC_phaB);     break;
+    case RightDcPhaB:  myPrintf("RightDcPhaB  free=%u", free); send(MotorControllerFrontRightDcPhaB, right.rtY.DC_phaB);     break;
+    case LeftDcPhaC:   myPrintf("LeftDcPhaC   free=%u", free); send(MotorControllerFrontLeftDcPhaC,  left. rtY.DC_phaC);     break;
+    case RightDcPhaC:  myPrintf("RightDcPhaC  free=%u", free); send(MotorControllerFrontRightDcPhaC, right.rtY.DC_phaC);     break;
+    case LeftChops:    myPrintf("LeftChops    free=%u", free); send(MotorControllerFrontLeftChops,   left. chops);           break;
+    case RightChops:   myPrintf("RightChops   free=%u", free); send(MotorControllerFrontRightChops,  right.chops);           break;
+    case LeftHall:     myPrintf("LeftHall     free=%u", free); send(MotorControllerFrontLeftHall,    left.hallBits());       break;
+    case RightHall:    myPrintf("RightHall    free=%u", free); send(MotorControllerFrontRightHall,   right.hallBits());      break;
+    default: __builtin_unreachable();
     }
+
+    asUint8++;
+
+    if (sendState >= Restart)
+        sendState = LeftDcLink;
 }
 #endif
 
