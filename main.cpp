@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 
 #include "stm32f1xx_hal.h"
 
@@ -174,8 +175,6 @@ struct {
 } buzzer;
 
 Command command;
-Feedback feedback;
-
 
 
 void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
@@ -842,10 +841,11 @@ void CAN_Init()
     CanHandle.Init.ReceiveFifoLocked = DISABLE;
     CanHandle.Init.TransmitFifoPriority = DISABLE;
     CanHandle.Init.Mode = CAN_MODE_NORMAL;
+
     CanHandle.Init.SyncJumpWidth = CAN_SJW_1TQ;
-    CanHandle.Init.TimeSeg1 = CAN_BS1_6TQ;
-    CanHandle.Init.TimeSeg2 = CAN_BS2_1TQ;
-    CanHandle.Init.Prescaler = 4;
+    CanHandle.Init.TimeSeg1 = CAN_BS1_3TQ;
+    CanHandle.Init.TimeSeg2 = CAN_BS2_4TQ;
+    CanHandle.Init.Prescaler = 16;
 
     if (const auto result = HAL_CAN_Init(&CanHandle); result == HAL_OK)
         myPrintf("HAL_CAN_Init() succeeded");
@@ -860,9 +860,9 @@ void CAN_Init()
     sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
     sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
     sFilterConfig.FilterIdHigh = 0x0000; // TODO
-    sFilterConfig.FilterIdLow = 0b11111111111; // TODO
+    sFilterConfig.FilterIdLow = 0x0000; // TODO
     sFilterConfig.FilterMaskIdHigh = 0x0000; // TODO
-    sFilterConfig.FilterMaskIdLow = 0b11111111111; // TODO
+    sFilterConfig.FilterMaskIdLow = 0x0000; // TODO
     sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
     sFilterConfig.FilterActivation = ENABLE;
     sFilterConfig.SlaveStartFilterBank = 14;
@@ -1000,7 +1000,18 @@ void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 
     CAN_RxHeaderTypeDef header;
     uint8_t buf[8];
-    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
+    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result == HAL_OK)
+    {
+        myPrintf("HAL_CAN_GetRxMessage() succeeded");
+        myPrintf("StdId = %x %u", header.StdId, header.StdId);
+        myPrintf("ExtId = %x %u", header.ExtId, header.ExtId);
+        myPrintf("IDE = %x %u", header.IDE, header.IDE);
+        myPrintf("RTR = %x %u", header.RTR, header.RTR);
+        myPrintf("DLC = %x %u", header.DLC, header.DLC);
+        myPrintf("Timestamp = %x %u", header.Timestamp, header.Timestamp);
+        myPrintf("FilterMatchIndex = %x %u", header.FilterMatchIndex, header.FilterMatchIndex);
+    }
+    else
     {
         myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
         while (true);
@@ -1022,7 +1033,7 @@ void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 
 void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
 {
-    myPrintf("CAN_TxMailboxCompleteCallback() called");
+    //myPrintf("CAN_TxMailboxCompleteCallback() called");
 
     // slightly yucky, but we don't want to block inside the IRQ handler
     //if (HAL_CAN_GetTxMailboxesFreeLevel(hcan) >= 2)
@@ -1468,6 +1479,8 @@ void sendFeedback()
     if (UART_DMA_CHANNEL->CNDTR != 0)
         return;
 
+    static Feedback feedback;
+
     feedback.start = Feedback::VALID_HEADER;
 
     feedback.left.angle = left.rtY.a_elecAngle;
@@ -1510,29 +1523,99 @@ void sendFeedback()
 #ifdef FEATURE_CAN
 void sendCanFeedback()
 {
-    const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
-    myPrintf("sendCanFeedback() called (free=%u)", free);
-
-    if (free < 1)
-        return;
-
-    CAN_TxHeaderTypeDef TxHeader;
-    TxHeader.StdId = 0x321;
-    TxHeader.ExtId = 0x01;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.DLC = 2;
-    TxHeader.TransmitGlobalTime = DISABLE;
-
-    uint8_t buf[8];
-
-    static uint32_t TxMailbox;
-    if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &TxHeader, buf, &TxMailbox); result == HAL_OK)
-        myPrintf("HAL_CAN_AddTxMessage() succeeded");
-    else
+    myPrintf("sendCanFeedback() called");
+    while (const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle))
     {
-        myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
-        while (true);
+        myPrintf("free=%u", free);
+
+        if (free < 1)
+            return;
+
+        enum SendState : uint8_t {
+            LeftCurrent,
+            RightCurrent,
+            LeftSpeed,
+            RightSpeed,
+            Restart
+        };
+
+        static union {
+            SendState sendState{LeftCurrent};
+            uint8_t asUint8;
+        };
+
+        constexpr auto send = [](uint32_t addr, auto value){
+            CAN_TxHeaderTypeDef header;
+            header.StdId = addr;
+            header.ExtId = 0x01;
+            header.RTR = CAN_RTR_DATA;
+            header.IDE = CAN_ID_STD;
+            header.DLC = 8;
+            header.TransmitGlobalTime = DISABLE;
+
+            uint8_t buf[8];
+            std::fill(std::begin(buf), std::end(buf), 0x69);
+
+            static uint32_t TxMailbox;
+            if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
+            {
+                myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+                while (true);
+            }
+        };
+
+        enum { //                         vv
+            DeviceTypeMotorController = 0b00000000000
+        };
+
+        enum { //                         ..vv
+            MotorControllerRec =        0b00000000000,
+            MotorControllerSend =       0b00010000000,
+        };
+
+        enum { //                         ....v
+            MotorControllerFront =      0b00000000000,
+            MotorControllerBack =       0b00001000000,
+        };
+
+        enum { //                         .....v
+            MotorControllerLeft =       0b00000000000,
+            MotorControllerRight =      0b00000100000,
+        };
+
+        enum { //                         ......vvvvv
+            MotorControllerCurrent =    0b00000000000,
+            MotorControllerSpeed =      0b00000000001
+        };
+
+        enum {
+            MotorControllerFrontLeftCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerLeft | MotorControllerFront,
+            MotorControllerFrontRightCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerRight | MotorControllerFront,
+            MotorControllerBackLeftCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerLeft | MotorControllerBack,
+            MotorControllerBackRightCurrent = DeviceTypeMotorController | MotorControllerSend | MotorControllerCurrent | MotorControllerRight | MotorControllerBack,
+            MotorControllerFrontLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerLeft | MotorControllerFront,
+            MotorControllerFrontRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerRight | MotorControllerFront,
+            MotorControllerBackLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerLeft | MotorControllerBack,
+            MotorControllerBackRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerRight | MotorControllerBack,
+        };
+
+        switch (sendState)
+        {
+#ifdef VORNE
+        case LeftCurrent:  send(0b00010000000, left.rtU.i_DCLink);  break;
+        case RightCurrent: send(0b00010100000, right.rtU.i_DCLink); break;
+#else
+        case LeftCurrent:  send(0b00011000000, left.rtU.i_DCLink);  break;
+        case RightCurrent: send(0b00011100000, right.rtU.i_DCLink); break;
+#endif
+        default:
+            __builtin_unreachable();
+        }
+
+        asUint8++;
+
+        if (sendState >= Restart)
+            sendState = LeftCurrent;
     }
 }
 #endif
