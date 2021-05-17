@@ -68,7 +68,9 @@ add_executable(firmware.elf
     bobbycar-foc-model/BLDC_controller_data.c
     bobbycar-foc-model/rtwtypes.h
 
-    bobbycar-protocol/protocol.h
+    bobbycar-protocol/bobbycar-can.h
+    bobbycar-protocol/bobbycar-common.h
+    bobbycar-protocol/bobbycar-serial.h
 
     startup_stm32f103xe.s
     system_stm32f1xx.c

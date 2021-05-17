@@ -30,7 +30,14 @@
 
 #include "defines.h"
 #include "config.h"
-#include "protocol.h"
+
+#include "bobbycar-common.h"
+#if FEATURE_SERIAL_CONTROL || FEATURE_SERIAL_FEEDBACK
+#include "bobbycar-serial.h"
+#endif
+#ifdef FEATURE_CAN
+#include "bobbycar-can.h"
+#endif
 
 extern "C" {
 #include "BLDC_controller.h"
@@ -138,7 +145,17 @@ volatile struct {
 // ###############################################################################
 
 std::atomic<uint32_t> timeout;
+
+#ifdef FEATURE_SERIAL_CONTROL
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
+
+Command command;
+#endif
+
+#ifdef FEATURE_CAN
+std::atomic<int16_t> timeoutCntLeft   = 0;
+std::atomic<int16_t> timeoutCntRight  = 0;
+#endif
 
 uint32_t main_loop_counter;
 
@@ -164,9 +181,9 @@ struct {
     ExtU  rtU;    /* External inputs */
     ExtY  rtY;    /* External outputs */
 
-    MotorState state;
-
-    uint32_t chops = 0;
+    bool enable{true};
+    int16_t iDcMax{17};
+    uint32_t chops{};
 
     uint8_t hallBits() const
     {
@@ -175,13 +192,10 @@ struct {
 } left, right;
 
 struct {
-    BuzzerState state;
-
+    uint8_t freq = 0;
+    uint8_t pattern = 0;
     uint32_t timer = 0;
 } buzzer;
-
-Command command;
-
 
 void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
 
@@ -207,7 +221,14 @@ void MX_ADC1_Init();
 
 void MX_ADC2_Init();
 
+
+#ifdef FEATURE_BUTTON
 void poweroff();
+#endif
+
+#ifdef MOTOR_TEST
+void doMotorTest();
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
 void parseCommand();
@@ -218,6 +239,7 @@ void sendFeedback();
 #endif
 
 #ifdef FEATURE_CAN
+void parseCanCommand();
 void sendCanFeedback();
 #endif
 
@@ -262,32 +284,34 @@ int main()
     left.rtP = rtP_Left;
     left.rtP.b_angleMeasEna      = 0;
 #ifdef PETERS_PLATINE
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;            // Left motor measured current phases = {iB, iC} -> do NOT change
+    left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
 #else
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;            // Left motor measured current phases = {iA, iB} -> do NOT change
+    left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;
 #endif
-    left.rtP.z_ctrlTypSel        = uint8_t(left.state.ctrlTyp);
     left.rtP.b_diagEna           = DIAG_ENA;
-    left.rtP.i_max               = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    left.rtP.n_max               = left.state.nMotMax << 4;                       // fixdt(1,16,4)
     left.rtP.b_fieldWeakEna      = FIELD_WEAK_ENA;
-    left.rtP.id_fieldWeakMax     = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    left.rtP.a_phaAdvMax         = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-    left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
-    left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
+    left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
+    left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
+
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+    left.rtP.i_max               = (15 * A2BIT_CONV) << 4;
+    left.rtP.n_max               = 1000 << 4;
+    left.rtP.id_fieldWeakMax     = (5 * A2BIT_CONV) << 4;
+    left.rtP.a_phaAdvMax         = 40 << 4;
 
     right.rtP = rtP_Left;
     right.rtP.b_angleMeasEna      = 0;
-    right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;            // Right motor measured current phases = {iB, iC} -> do NOT change
-    right.rtP.z_ctrlTypSel       = uint8_t(right.state.ctrlTyp);
+    right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
     right.rtP.b_diagEna          = DIAG_ENA;
-    right.rtP.i_max              = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    right.rtP.n_max              = right.state.nMotMax << 4;                       // fixdt(1,16,4)
     right.rtP.b_fieldWeakEna     = FIELD_WEAK_ENA;
-    right.rtP.id_fieldWeakMax    = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    right.rtP.a_phaAdvMax        = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-    right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
-    right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
+    right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;
+    right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;
+
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
+    right.rtP.i_max              = (15 * A2BIT_CONV) << 4;
+    right.rtP.n_max              = 1000 << 4;
+    right.rtP.id_fieldWeakMax    = (5 * A2BIT_CONV) << 4;
+    right.rtP.a_phaAdvMax        = 40 << 4;
 
     left.rtM.defaultParam        = &left.rtP;
     left.rtM.dwork               = &left.rtDW;
@@ -305,10 +329,10 @@ int main()
 
     for (int i = 8; i >= 0; i--)
     {
-        buzzer.state.freq = (uint8_t)i;
+        buzzer.freq = (uint8_t)i;
         HAL_Delay(50);
     }
-    buzzer.state.freq = 0;
+    buzzer.freq = 0;
 
 #ifdef HUARN2
     UART2_Init();
@@ -337,57 +361,31 @@ int main()
 
     while (true)
     {
-        //HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+        HAL_Delay(5); //delay in ms
+
+#ifdef MOTOR_TEST
+        doMotorTest();
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
         parseCommand();
 #endif
 
-        timeout = 0;
-
-#ifdef MOTOR_TEST
-        left.state.enable = true;
-        left.state.ctrlMod = ControlMode::Voltage;
-        left.state.ctrlTyp = ControlType::FieldOrientedControl;
-        left.state.pwm = pwm;
-        left.state.iMotMax = 2;
-
-        right.state.enable = true;
-        right.state.ctrlMod = ControlMode::Voltage;
-        right.state.ctrlTyp = ControlType::FieldOrientedControl;
-        right.state.pwm = pwm;
-        right.state.iMotMax = 2;
-
-        constexpr auto pwmMax = 250;
-
-        pwm += dir;
-        if (pwm > pwmMax) {
-          pwm = pwmMax;
-          dir = -1;
-        } else if (pwm < -pwmMax) {
-          pwm = -pwmMax;
-          dir = 1;
-        }
-#endif
-
-        // ####### CALC BOARD TEMPERATURE #######
-        filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
-        board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
-        board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
-
 #ifdef FEATURE_SERIAL_FEEDBACK
-        if (main_loop_counter % 50 == 0)
-            sendFeedback();
+        sendFeedback();
 #endif
 
 #ifdef FEATURE_CAN
+        parseCanCommand();
+
         sendCanFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
         if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
         {
-            left.state.enable = right.state.enable = 0;           // disable motors
+            left.enable = false;
+            right.enable = false;
 
             while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
 
@@ -399,52 +397,25 @@ int main()
         }
 #endif
 
-        left.rtP.z_ctrlTypSel         = uint8_t(left.state.ctrlTyp);
-        left.rtP.i_max                = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-        left.rtP.n_max                = left.state.nMotMax << 4;                       // fixdt(1,16,4)
-        left.rtP.id_fieldWeakMax      = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-        left.rtP.a_phaAdvMax          = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
+        // ####### CALC BOARD TEMPERATURE #######
+        filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
+        board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
+        board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
-        left.rtU.z_ctrlModReq = uint8_t(left.state.ctrlMod);
-        left.rtU.r_inpTgt     = left.state.pwm;
-
-        right.rtP.z_ctrlTypSel         = uint8_t(right.state.ctrlTyp);
-        right.rtP.i_max                = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-        right.rtP.n_max                = right.state.nMotMax << 4;                       // fixdt(1,16,4)
-        right.rtP.id_fieldWeakMax      = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-        right.rtP.a_phaAdvMax          = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-
-        right.rtU.z_ctrlModReq  = uint8_t(right.state.ctrlMod);
-        right.rtU.r_inpTgt      = right.state.pwm;
+        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
+        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
 
         main_loop_counter++;
-        timeout++;
     }
 }
 
 namespace {
-void updateBatVoltage()
-{
-    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-    {
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
-    }
-}
-
 void updateBuzzer()
 {
-    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-    {
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
-    }
-
-    //create square wave for buzzer
     buzzer.timer++;
-    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0)
+    if (buzzer.freq != 0 && (buzzer.timer / 1000) % (buzzer.pattern + 1) == 0)
     {
-        if (buzzer.timer % buzzer.state.freq == 0)
+        if (buzzer.timer % buzzer.freq == 0)
         {
             HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
         }
@@ -491,24 +462,24 @@ void updateMotors()
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
-    const bool chopL = std::abs(curL_DC) > (left.state.iDcMax * A2BIT_CONV);
+    const bool chopL = std::abs(curL_DC) > (left.iDcMax * A2BIT_CONV);
     if (chopL)
         left.chops++;
 
-    const bool chopR = std::abs(curR_DC) > (right.state.iDcMax * A2BIT_CONV);
+    const bool chopR = std::abs(curR_DC) > (right.iDcMax * A2BIT_CONV);
     if (chopR)
         right.chops++;
 
-    const auto timeoutVal = timeout.load();
+    const uint32_t timeoutVal = ++timeout;
 
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    if (chopL || timeoutVal > TIMEOUT || !left.state.enable)
+    if (chopL || timeoutVal > 500 || !left.enable)
         LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         LEFT_TIM->BDTR |= TIM_BDTR_MOE;
 
-    if (chopR || timeoutVal > TIMEOUT || !right.state.enable)
+    if (chopR || timeoutVal > 500 || !right.enable)
         RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
@@ -535,8 +506,8 @@ void updateMotors()
 #endif
     ;
 
-    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
-    const bool enableRFin = right.state.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
+    const bool enableLFin = left.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
+    const bool enableRFin = right.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
 
     // ========================= LEFT MOTOR ============================
     // Get hall sensors values
@@ -888,28 +859,31 @@ void CAN_Init()
         while (true);
     }
 
-    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID succeeded");
-    else
+    if (false)
     {
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID failed with %i", result);
-        while (true);
-    }
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
 
-    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID succeeded");
-    else
-    {
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID failed with %i", result);
-        while (true);
-    }
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
 
-    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID succeeded");
-    else
-    {
-        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID failed with %i", result);
-        while (true);
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
     }
 
     /* Start the CAN peripheral */
@@ -1005,41 +979,33 @@ void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 
     CAN_RxHeaderTypeDef header;
     uint8_t buf[8];
-    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result == HAL_OK)
-    {
-        myPrintf("StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
-            header.StdId, header.StdId,
-            header.ExtId, header.ExtId,
-            header.IDE, header.IDE,
-            header.RTR, header.RTR,
-            header.DLC, header.DLC,
-            header.Timestamp, header.Timestamp,
-            header.FilterMatchIndex, header.FilterMatchIndex
-        );
-    }
-    else
+    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
     {
         myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
-        while (true);
+        //while (true);
+        return;
     }
 
-    //if (header.IDE == CAN_ID_STD &&
-    //    (header.StdId == CAN_ID_COMMAND_STW_TO_BOARD(BOARD_INDEX) ||
-    //     header.StdId == CAN_ID_FEEDBACK_STW_TO_BOARD(BOARD_INDEX)))
-    //{
-    //    can_feedc0de_handle_frame(header.StdId, RxData, dlc_to_len(header.DLC));
-    //}
 
-    // slightly yucky, but we don't want to block inside the IRQ handler
-    //if (HAL_CAN_GetTxMailboxesFreeLevel(CanHandle) >= 2)
-    //{
-    //    can_feedc0de_poll();
-    //}
+    myPrintf("StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
+        header.StdId, header.StdId,
+        header.ExtId, header.ExtId,
+        header.IDE, header.IDE,
+        header.RTR, header.RTR,
+        header.DLC, header.DLC,
+        header.Timestamp, header.Timestamp,
+        header.FilterMatchIndex, header.FilterMatchIndex
+    );
+
+    // TODO apply changes and reset timeout qualification
+
+    timeoutCntLeft = 0;
+    timeoutCntRight = 0;
 }
 
 void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
 {
-    //myPrintf("CAN_TxMailboxCompleteCallback() called");
+    myPrintf("CAN_TxMailboxCompleteCallback() called");
 
     // slightly yucky, but we don't want to block inside the IRQ handler
     //if (HAL_CAN_GetTxMailboxesFreeLevel(hcan) >= 2)
@@ -1397,25 +1363,72 @@ void MX_ADC2_Init()
     __HAL_ADC_ENABLE(&hadc2);
 }
 
+#ifdef FEATURE_BUTTON
 void poweroff()
 {
-  //  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
-        buzzer.state.pattern = 0;
-        left.state.enable = right.state.enable = 0;
-        for (int i = 0; i < 8; i++) {
-            buzzer.state.freq = (uint8_t)i;
-            HAL_Delay(50);
-        }
-        HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
-        for (int i = 0; i < 5; i++)
-            HAL_Delay(1000);
-  //  }
+//  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
+    buzzer.pattern = 0;
+    left.enable = false;
+    right.enable = 0;
+
+    for (int i = 0; i < 8; i++) {
+        buzzer.freq = (uint8_t)i;
+        HAL_Delay(50);
+    }
+    HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
+    for (int i = 0; i < 5; i++)
+        HAL_Delay(1000);
+//  }
 }
+#endif
+
+void communicationTimeout()
+{
+    left.enable = false;
+    right.enable = true;
+
+    // TODO all the other params
+
+    buzzer.freq = 24;
+    buzzer.pattern = 1;
+
+    HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+}
+
+#ifdef MOTOR_TEST
+void doMotorTest()
+{
+    timeout = 0; // proove, that the controlling code is still running
+
+    left.state.enable = true;
+    left.state.ctrlMod = ControlMode::Voltage;
+    left.state.ctrlTyp = ControlType::FieldOrientedControl;
+    left.state.pwm = pwm;
+    left.state.iMotMax = 2;
+
+    right.state.enable = true;
+    right.state.ctrlMod = ControlMode::Voltage;
+    right.state.ctrlTyp = ControlType::FieldOrientedControl;
+    right.state.pwm = pwm;
+    right.state.iMotMax = 2;
+
+    constexpr auto pwmMax = 250;
+
+    pwm += dir;
+    if (pwm > pwmMax) {
+        pwm = pwmMax;
+        dir = -1;
+    } else if (pwm < -pwmMax) {
+        pwm = -pwmMax;
+        dir = 1;
+    }
+}
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
 void parseCommand()
 {
-    bool any_parsed{false};
+    timeout = 0; // proove, that the controlling code is still running
 
     for (int i = 0; i < 1; i++)
     {
@@ -1426,47 +1439,59 @@ void parseCommand()
         if (command.checksum != checksum)
             continue;
 
-        left.state = command.left;
-        right.state = command.right;
+        left.iDcMax = command.left.iDcMax;
 
-        buzzer.state = command.buzzer;
+        left.rtP.z_ctrlTypSel    = uint8_t(command.left.ctrlTyp);
+        left.rtP.i_max           = (command.left.iMotMax * A2BIT_CONV) << 4;
+        left.rtP.n_max           = command.left.nMotMax << 4;
+        left.rtP.id_fieldWeakMax = (command.left.fieldWeakMax * A2BIT_CONV) << 4;
+        left.rtP.a_phaAdvMax     = command.left.phaseAdvMax << 4;
+        left.rtU.z_ctrlModReq    = uint8_t(command.left.ctrlMod);
+        left.rtU.r_inpTgt        = command.left.pwm;
 
+        right.iDcMax = command.right.iDcMax;
+
+        right.rtP.z_ctrlTypSel    = uint8_t(command.right.ctrlTyp);
+        right.rtP.i_max           = (command.right.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        right.rtP.n_max           = command.right.nMotMax << 4;                       // fixdt(1,16,4)
+        right.rtP.id_fieldWeakMax = (command.right.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        right.rtP.a_phaAdvMax     = command.right.phaseAdvMax << 4;                   // fixdt(1,16,4)
+        right.rtU.z_ctrlModReq    = uint8_t(command.right.ctrlMod);
+        right.rtU.r_inpTgt        = command.right.pwm;
+
+        buzzer.freq = command.buzzer.freq;
+        buzzer.pattern = command.buzzer.pattern;
+
+#ifdef FEATURE_BUTTON
         if (command.poweroff)
             poweroff();
+#endif
 
         HAL_GPIO_WritePin(LED_PORT, LED_PIN, command.led ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
         command.start     = Command::INVALID_HEADER; // Change the Start Frame for timeout detection in the next cycle
         timeoutCntSerial  = 0;                       // Reset the timeout counter
 
-        any_parsed = true;
-        break;
+        return;
     }
 
-    if (!any_parsed)
+    if (timeoutCntSerial++ >= 100) // Timeout qualification
     {
-        if (timeoutCntSerial++ >= 100) // Timeout qualification
+        timeoutCntSerial  = 100; // Limit timout counter value
+
+        communicationTimeout();
+
+        // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
+        if (main_loop_counter % 25 == 0)
         {
-            timeoutCntSerial  = 100; // Limit timout counter value
-
-            left.state = right.state = {.enable=true};
-
-            //buzzer.state = { 24, 1 };
-
-            HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
-
-            // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
-            if (main_loop_counter % 25 == 0)
-            {
 #ifdef HUARN2
-                HAL_UART_DMAStop(&huart2);
-                HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+            HAL_UART_DMAStop(&huart2);
+            HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
 #ifdef HUARN3
-                HAL_UART_DMAStop(&huart3);
-                HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
+            HAL_UART_DMAStop(&huart3);
+            HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
 #endif
-            }
         }
     }
 }
@@ -1527,103 +1552,28 @@ void sendFeedback()
 #endif
 
 #ifdef FEATURE_CAN
+void parseCanCommand()
+{
+    timeout = 0; // proove, that the controlling code is still running
+
+    const auto l = ++timeoutCntLeft;
+    const auto r = ++timeoutCntRight;
+    if (l >= 99 || r >= 99)
+    {
+        if (l > 100)
+            timeoutCntLeft = 100;
+        if (r > 100)
+            timeoutCntRight = 100;
+
+        communicationTimeout();
+    }
+}
+
 void sendCanFeedback()
 {
-    //myPrintf("sendCanFeedback() called");
-
     const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
     if (!free)
         return;
-
-    enum { //                         vv
-        DeviceTypeMotorController = 0b00000000000
-    };
-
-    enum { //                         ..vv
-        MotorControllerRec =        0b00000000000,
-        MotorControllerSend =       0b00010000000,
-    };
-
-    enum { //                         ....vvvvv
-        MotorControllerDcLink =     0b00000000000,
-        MotorControllerSpeed =      0b00000000100,
-        MotorControllerError =      0b00000001000,
-        MotorControllerAngle =      0b00000001100,
-        MotorControllerDcPhaA =     0b00000010000,
-        MotorControllerDcPhaB =     0b00000010100,
-        MotorControllerDcPhaC =     0b00000011000,
-        MotorControllerChops =      0b00000011100,
-        MotorControllerHall =       0b00000100000,
-        MotorControllerVoltage =    0b00000100100,
-        MotorControllerTemp =       0b00000101000
-    };
-
-    enum { //                         .........v
-        MotorControllerFront =      0b00000000000,
-        MotorControllerBack =       0b00000000010,
-    };
-
-    enum { //                         ..........v
-        MotorControllerLeft =       0b00000000000,
-        MotorControllerRight =      0b00000000001,
-    };
-
-    enum {
-        MotorControllerFrontLeftDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightDcLink = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcLink | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightSpeed = DeviceTypeMotorController | MotorControllerSend | MotorControllerSpeed | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightError = DeviceTypeMotorController | MotorControllerSend | MotorControllerError | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightAngle = DeviceTypeMotorController | MotorControllerSend | MotorControllerAngle | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightDcPhaA = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaA | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightDcPhaB = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaB | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightDcPhaC = DeviceTypeMotorController | MotorControllerSend | MotorControllerDcPhaC | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightChops = DeviceTypeMotorController | MotorControllerSend | MotorControllerChops | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightHall = DeviceTypeMotorController | MotorControllerSend | MotorControllerHall | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightVoltage = DeviceTypeMotorController | MotorControllerSend | MotorControllerVoltage | MotorControllerBack | MotorControllerRight,
-
-        MotorControllerFrontLeftTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerFront | MotorControllerLeft,
-        MotorControllerFrontRightTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerFront | MotorControllerRight,
-        MotorControllerBackLeftTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerBack | MotorControllerLeft,
-        MotorControllerBackRightTemp = DeviceTypeMotorController | MotorControllerSend | MotorControllerTemp | MotorControllerBack | MotorControllerRight,
-    };
 
     enum SendState : uint8_t {
         LeftDcLink,
@@ -1845,7 +1795,6 @@ extern "C" void DMA1_Channel1_IRQHandler()
 
     /* USER CODE END DMA1_Channel1_IRQn 0 */
     updateMotors();
-    updateBatVoltage();
     updateBuzzer();
     /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
 

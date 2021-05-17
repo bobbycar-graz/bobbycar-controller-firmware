@@ -6,12 +6,6 @@
 #define PWM_FREQ            16000     // PWM frequency in Hz
 #endif
 #define DEAD_TIME              48     // PWM deadtime
-#ifdef MOTOR_TEST
-  #define DELAY_IN_MAIN_LOOP    20
-#else
-  #define DELAY_IN_MAIN_LOOP    5
-#endif
-#define TIMEOUT                 5     // number of wrong / missing input commands before emergency off
 #define A2BIT_CONV             50     // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
 
 // ADC conversion time definitions
@@ -70,13 +64,6 @@
 #define TEMP_CAL_LOW_DEG_C      358       // temperature 1: measured temperature [°C * 10]. Here 35.8 °C
 #define TEMP_CAL_HIGH_ADC       1588      // temperature 2: ADC value
 #define TEMP_CAL_HIGH_DEG_C     489       // temperature 2: measured temperature [°C * 10]. Here 48.9 °C
-#define TEMP_WARNING_ENABLE     0         // to beep or not to beep, 1 or 0, DO NOT ACTIVITE WITHOUT CALIBRATION!
-#define TEMP_WARNING            600       // annoying fast beeps [°C * 10].  Here 60.0 °C
-#define TEMP_POWEROFF_ENABLE    0         // to poweroff or not to poweroff, 1 or 0, DO NOT ACTIVITE WITHOUT CALIBRATION!
-#define TEMP_POWEROFF           650       // overheat poweroff. (while not driving) [°C * 10]. Here 65.0 °C
-
-#define INACTIVITY_TIMEOUT      8         // minutes of not driving until poweroff. it is not very precise.
-
 
 
 // ############################### INPUT ###############################
