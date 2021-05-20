@@ -44,6 +44,7 @@ add_definitions(-DHUARN2)
 #add_definitions(-DFEATURE_SERIAL_FEEDBACK)
 add_definitions(-DLOG_TO_SERIAL)
 add_definitions(-DFEATURE_CAN)
+#add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
 
 add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c

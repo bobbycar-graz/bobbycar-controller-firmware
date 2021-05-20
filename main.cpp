@@ -245,6 +245,7 @@ void sendFeedback();
 
 #ifdef FEATURE_CAN
 void parseCanCommand();
+void applyIncomingCanMessage();
 void sendCanFeedback();
 #endif
 
@@ -353,6 +354,22 @@ int main()
 
     while (true)
     {
+        const auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
+            uint32_t tickstart = HAL_GetTick();
+            uint32_t wait = Delay;
+
+            /* Add a freq to guarantee minimum wait */
+            if (wait < HAL_MAX_DELAY)
+            {
+                wait += (uint32_t)(uwTickFreq);
+            }
+
+            while ((HAL_GetTick() - tickstart) < wait)
+            {
+                applyIncomingCanMessage();
+            }
+        };
+
         HAL_Delay(5); //delay in ms
 
 #ifdef MOTOR_TEST
@@ -794,8 +811,6 @@ void CAN_Init()
 {
     myPrintf("CAN_Init() called");
 
-    CAN_FilterTypeDef  sFilterConfig;
-
     /* Configure the CAN peripheral */
     CanHandle.Instance = CANx;
 
@@ -823,28 +838,33 @@ void CAN_Init()
         while (true);
     }
 
-    /* Configure the CAN Filter */
-    sFilterConfig.FilterBank = 0;
-    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-
-    //
-    //                                 TTRR.....FL
-    sFilterConfig.FilterIdHigh =     0b00000000000; // TODO
-    sFilterConfig.FilterIdLow =      0b00000000000; // TODO
-    sFilterConfig.FilterMaskIdHigh = 0b00000000000; // TODO
-    sFilterConfig.FilterMaskIdLow =  0b00000000000; // TODO
-
-    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-    sFilterConfig.FilterActivation = ENABLE;
-    sFilterConfig.SlaveStartFilterBank = 14;
-
-    if (const auto result = HAL_CAN_ConfigFilter(&CanHandle, &sFilterConfig); result == HAL_OK)
-        myPrintf("HAL_CAN_ConfigFilter() succeeded");
-    else
     {
-        myPrintf("HAL_CAN_ConfigFilter() failed with %i", result);
-        while (true);
+        /* Configure the CAN Filter */
+        CAN_FilterTypeDef  sFilterConfig;
+        sFilterConfig.FilterBank = 0;
+        sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+        sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+
+        //
+        //                                 TTRR.....FL
+        sFilterConfig.FilterIdHigh =     0b00000000000;
+        sFilterConfig.FilterIdLow =      0b00000000000;
+        sFilterConfig.FilterMaskIdHigh = 0b00000000000;
+        sFilterConfig.FilterMaskIdLow =  0b11110000010;
+        //                               0b0000.....0.
+
+
+        sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+        sFilterConfig.FilterActivation = CAN_FILTER_ENABLE;
+        sFilterConfig.SlaveStartFilterBank = 14;
+
+        if (const auto result = HAL_CAN_ConfigFilter(&CanHandle, &sFilterConfig); result == HAL_OK)
+            myPrintf("HAL_CAN_ConfigFilter() succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_ConfigFilter() failed with %i", result);
+            while (true);
+        }
     }
 
     if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID, CAN_RxFifo0MsgPendingCallback); result == HAL_OK)
@@ -900,13 +920,16 @@ void CAN_Init()
         while (true);
     }
 
-    /* Activate CAN TX notification */
-    if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_TX_MAILBOX_EMPTY); result == HAL_OK)
-        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY succeeded");
-    else
+    if (false)
     {
-        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY failed with %i", result);
-        while (true);
+        /* Activate CAN TX notification */
+        if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_TX_MAILBOX_EMPTY); result == HAL_OK)
+            myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY failed with %i", result);
+            while (true);
+        }
     }
 }
 
@@ -973,54 +996,7 @@ void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
     //myPrintf("CAN_RxFifo0MsgPendingCallback() called");
 
-    CAN_RxHeaderTypeDef header;
-    uint8_t buf[8];
-    if (const auto result = HAL_CAN_GetRxMessage(CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
-    {
-        myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
-        //while (true);
-        return;
-    }
-
-    switch (header.StdId)
-    {
-    case MotorControllerFrontLeftEnable:         /* myPrintf("MotorControllerFrontLeftEnable");         */ left.enable = *((bool *)buf);      break;
-    case MotorControllerFrontRightEnable:        /* myPrintf("MotorControllerFrontRightEnable");        */ right.enable = *((bool *)buf);     break;
-    case MotorControllerFrontLeftInpTgt:         /* myPrintf("MotorControllerFrontLeftInpTgt");         */ timeoutCntLeft = 0; left.rtU.r_inpTgt = *((int16_t*)buf); break;
-    case MotorControllerFrontRightInpTgt:        /* myPrintf("MotorControllerFrontRightInpTgt");        */ timeoutCntRight = 0; right.rtU.r_inpTgt = *((int16_t*)buf); break;
-    case MotorControllerFrontLeftCtrlTyp:        /* myPrintf("MotorControllerFrontLeftCtrlTyp");        */ left.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightCtrlTyp:       /* myPrintf("MotorControllerFrontRightCtrlTyp");       */ right.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftCtrlMod:        /* myPrintf("MotorControllerFrontLeftCtrlMod");        */ left.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightCtrlMod:       /* myPrintf("MotorControllerFrontRightCtrlMod");       */ right.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftIMotMax:        /* myPrintf("MotorControllerFrontLeftIMotMax");        */ left.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontRightIMotMax:       /* myPrintf("MotorControllerFrontRightIMotMax");       */ right.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontLeftIDcMax:         /* myPrintf("MotorControllerFrontLeftIDcMax");         */ left.iDcMax = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightIDcMax:        /* myPrintf("MotorControllerFrontRightIDcMax");        */ right.iDcMax = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftNMotMax:        /* myPrintf("MotorControllerFrontLeftNMotMax");        */ left.rtP.n_max = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontRightNMotMax:       /* myPrintf("MotorControllerFrontRightNMotMax");       */ right.rtP.n_max = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontLeftFieldWeakMax:   /* myPrintf("MotorControllerFrontLeftFieldWeakMax");   */ left.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontRightFieldWeakMax:  /* myPrintf("MotorControllerFrontRightFieldWeakMax");  */ right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontLeftPhaseAdvMax:    /* myPrintf("MotorControllerFrontLeftPhaseAdvMax");    */ left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontRightPhaseAdvMax:   /* myPrintf("MotorControllerFrontRightPhaseAdvMax");   */ right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontLeftBuzzerFreq:     /* myPrintf("MotorControllerFrontLeftBuzzerFreq");     */ buzzer.freq = *((uint8_t*)buf);    break;
-    case MotorControllerFrontRightBuzzerFreq:    /* myPrintf("MotorControllerFrontRightBuzzerFreq");    */ buzzer.freq = *((uint8_t*)buf);    break;
-    case MotorControllerFrontLeftBuzzerPattern:  /* myPrintf("MotorControllerFrontLeftBuzzerPattern");  */ buzzer.pattern = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightBuzzerPattern: /* myPrintf("MotorControllerFrontRightBuzzerPattern"); */ buzzer.pattern = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftLed:            /* myPrintf("MotorControllerFrontLeftLed");            */ break;
-    case MotorControllerFrontRightLed:           /* myPrintf("MotorControllerFrontRightLed");           */ break;
-    case MotorControllerFrontLeftPoweroff:       /* myPrintf("MotorControllerFrontLeftPoweroff");       */ break;
-    case MotorControllerFrontRightPoweroff:      /* myPrintf("MotorControllerFrontRightPoweroff");      */ break;
-    default:
-        myPrintf("UNKNOWN StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
-                 header.StdId, header.StdId,
-                 header.ExtId, header.ExtId,
-                 header.IDE, header.IDE,
-                 header.RTR, header.RTR,
-                 header.DLC, header.DLC,
-                 header.Timestamp, header.Timestamp,
-                 header.FilterMatchIndex, header.FilterMatchIndex
-                 );
-    }
+    applyIncomingCanMessage();
 }
 
 void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
@@ -1595,42 +1571,86 @@ void parseCanCommand()
     }
 }
 
+void applyIncomingCanMessage()
+{
+    CAN_RxHeaderTypeDef header;
+    uint8_t buf[8];
+    if (const auto result = HAL_CAN_GetRxMessage(&CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
+    {
+        myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
+        //while (true);
+        return;
+    }
+
+    switch (header.StdId)
+    {
+    case MotorControllerFrontLeftEnable:         /* myPrintf("MotorControllerFrontLeftEnable");         */ left.enable = *((bool *)buf);      break;
+    case MotorControllerFrontRightEnable:        /* myPrintf("MotorControllerFrontRightEnable");        */ right.enable = *((bool *)buf);     break;
+    case MotorControllerFrontLeftInpTgt:         /* myPrintf("MotorControllerFrontLeftInpTgt");         */ timeoutCntLeft = 0; left.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorControllerFrontRightInpTgt:        /* myPrintf("MotorControllerFrontRightInpTgt");        */ timeoutCntRight = 0; right.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorControllerFrontLeftCtrlTyp:        /* myPrintf("MotorControllerFrontLeftCtrlTyp");        */ left.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightCtrlTyp:       /* myPrintf("MotorControllerFrontRightCtrlTyp");       */ right.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftCtrlMod:        /* myPrintf("MotorControllerFrontLeftCtrlMod");        */ left.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightCtrlMod:       /* myPrintf("MotorControllerFrontRightCtrlMod");       */ right.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftIMotMax:        /* myPrintf("MotorControllerFrontLeftIMotMax");        */ left.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontRightIMotMax:       /* myPrintf("MotorControllerFrontRightIMotMax");       */ right.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontLeftIDcMax:         /* myPrintf("MotorControllerFrontLeftIDcMax");         */ left.iDcMax = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightIDcMax:        /* myPrintf("MotorControllerFrontRightIDcMax");        */ right.iDcMax = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftNMotMax:        /* myPrintf("MotorControllerFrontLeftNMotMax");        */ left.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontRightNMotMax:       /* myPrintf("MotorControllerFrontRightNMotMax");       */ right.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontLeftFieldWeakMax:   /* myPrintf("MotorControllerFrontLeftFieldWeakMax");   */ left.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontRightFieldWeakMax:  /* myPrintf("MotorControllerFrontRightFieldWeakMax");  */ right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontLeftPhaseAdvMax:    /* myPrintf("MotorControllerFrontLeftPhaseAdvMax");    */ left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontRightPhaseAdvMax:   /* myPrintf("MotorControllerFrontRightPhaseAdvMax");   */ right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontLeftBuzzerFreq:     /* myPrintf("MotorControllerFrontLeftBuzzerFreq");     */ buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorControllerFrontRightBuzzerFreq:    /* myPrintf("MotorControllerFrontRightBuzzerFreq");    */ buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorControllerFrontLeftBuzzerPattern:  /* myPrintf("MotorControllerFrontLeftBuzzerPattern");  */ buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightBuzzerPattern: /* myPrintf("MotorControllerFrontRightBuzzerPattern"); */ buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftLed:            /* myPrintf("MotorControllerFrontLeftLed");            */ break;
+    case MotorControllerFrontRightLed:           /* myPrintf("MotorControllerFrontRightLed");           */ break;
+    case MotorControllerFrontLeftPoweroff:       /* myPrintf("MotorControllerFrontLeftPoweroff");       */ break;
+    case MotorControllerFrontRightPoweroff:      /* myPrintf("MotorControllerFrontRightPoweroff");      */ break;
+    default:
+#ifndef CAN_LOG_UNKNOWN_ADDR
+        if constexpr (false)
+#endif
+        myPrintf("UNKNOWN %c%c %c%c %c%c%c%c%c %c%c %s",
+                 header.StdId&1024?'1':'0',
+                 header.StdId&512?'1':'0',
+
+                 header.StdId&256?'1':'0',
+                 header.StdId&128?'1':'0',
+
+                 header.StdId&64?'1':'0',
+                 header.StdId&32?'1':'0',
+                 header.StdId&16?'1':'0',
+                 header.StdId&8?'1':'0',
+                 header.StdId&4?'1':'0',
+
+                 header.StdId&2?'1':'0',
+                 header.StdId&1?'1':'0',
+
+                 bobbycarCanIdDesc(header.StdId)
+        );
+
+        if constexpr (false)
+        myPrintf("UNKNOWN StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
+                 header.StdId, header.StdId,
+                 header.ExtId, header.ExtId,
+                 header.IDE, header.IDE,
+                 header.RTR, header.RTR,
+                 header.DLC, header.DLC,
+                 header.Timestamp, header.Timestamp,
+                 header.FilterMatchIndex, header.FilterMatchIndex
+        );
+    }
+}
+
 void sendCanFeedback()
 {
     const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
     if (!free)
         return;
-
-    enum SendState : uint8_t {
-        LeftDcLink,
-        RightDcLink,
-        LeftSpeed,
-        RightSpeed,
-        LeftError,
-        RightError,
-        LeftAngle,
-        RightAngle,
-        LeftDcPhaA,
-        RightDcPhaA,
-        LeftDcPhaB,
-        RightDcPhaB,
-        LeftDcPhaC,
-        RightDcPhaC,
-        LeftChops,
-        RightChops,
-        LeftHall,
-        RightHall,
-        LeftVoltage,
-        RightVoltage,
-        LeftTemp,
-        RightTemp,
-        Restart
-    };
-
-    static union {
-        SendState sendState{LeftDcLink};
-        uint8_t asUint8;
-    };
 
     constexpr auto send = [](uint32_t addr, auto value){
         CAN_TxHeaderTypeDef header;
@@ -1652,37 +1672,34 @@ void sendCanFeedback()
         }
     };
 
-    switch (sendState)
+    static uint8_t whichToSend{};
+
+    switch (whichToSend++)
     {
-    case LeftDcLink:   /* myPrintf("LeftCurrent  free=%u", free); */ send(MotorControllerFrontLeftDcLink,   left. rtU.i_DCLink);    break;
-    case RightDcLink:  /* myPrintf("RightCurrent free=%u", free); */ send(MotorControllerFrontRightDcLink,  right.rtU.i_DCLink);    break;
-    case LeftSpeed:    /* myPrintf("LeftSpeed    free=%u", free); */ send(MotorControllerFrontLeftSpeed,    left. rtY.n_mot);       break;
-    case RightSpeed:   /* myPrintf("RightSpeed   free=%u", free); */ send(MotorControllerFrontRightSpeed,   right.rtY.n_mot);       break;
-    case LeftError:    /* myPrintf("LeftError    free=%u", free); */ send(MotorControllerFrontLeftError,    left. rtY.z_errCode);   break;
-    case RightError:   /* myPrintf("RightError   free=%u", free); */ send(MotorControllerFrontRightError,   right.rtY.z_errCode);   break;
-    case LeftAngle:    /* myPrintf("LeftAngle    free=%u", free); */ send(MotorControllerFrontLeftAngle,    left. rtY.a_elecAngle); break;
-    case RightAngle:   /* myPrintf("RightAngle   free=%u", free); */ send(MotorControllerFrontRightAngle,   right.rtY.a_elecAngle); break;
-    case LeftDcPhaA:   /* myPrintf("LeftDcPhaA   free=%u", free); */ send(MotorControllerFrontLeftDcPhaA,   left. rtY.DC_phaA);     break;
-    case RightDcPhaA:  /* myPrintf("RightDcPhaA  free=%u", free); */ send(MotorControllerFrontRightDcPhaA,  right.rtY.DC_phaA);     break;
-    case LeftDcPhaB:   /* myPrintf("LeftDcPhaB   free=%u", free); */ send(MotorControllerFrontLeftDcPhaB,   left. rtY.DC_phaB);     break;
-    case RightDcPhaB:  /* myPrintf("RightDcPhaB  free=%u", free); */ send(MotorControllerFrontRightDcPhaB,  right.rtY.DC_phaB);     break;
-    case LeftDcPhaC:   /* myPrintf("LeftDcPhaC   free=%u", free); */ send(MotorControllerFrontLeftDcPhaC,   left. rtY.DC_phaC);     break;
-    case RightDcPhaC:  /* myPrintf("RightDcPhaC  free=%u", free); */ send(MotorControllerFrontRightDcPhaC,  right.rtY.DC_phaC);     break;
-    case LeftChops:    /* myPrintf("LeftChops    free=%u", free); */ send(MotorControllerFrontLeftChops,    left. chops);           break;
-    case RightChops:   /* myPrintf("RightChops   free=%u", free); */ send(MotorControllerFrontRightChops,   right.chops);           break;
-    case LeftHall:     /* myPrintf("LeftHall     free=%u", free); */ send(MotorControllerFrontLeftHall,     left.hallBits());       break;
-    case RightHall:    /* myPrintf("RightHall    free=%u", free); */ send(MotorControllerFrontRightHall,    right.hallBits());      break;
-    case LeftVoltage:  /* myPrintf("LeftVoltage  free=%u", free); */ send(MotorControllerFrontLeftVoltage,  batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case RightVoltage: /* myPrintf("RightVoltage free=%u", free); */ send(MotorControllerFrontRightVoltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case LeftTemp:     /* myPrintf("LeftTemp     free=%u", free); */ send(MotorControllerFrontLeftTemp,     board_temp_deg_c);      break;
-    case RightTemp:    /* myPrintf("RightTemp    free=%u", free); */ send(MotorControllerFrontRightTemp,    board_temp_deg_c);      break;
-    default: __builtin_unreachable();
+    case 0:  /* myPrintf("LeftCurrent  free=%u", free); */ send(MotorControllerFrontLeftDcLink,   left. rtU.i_DCLink);    break;
+    case 1:  /* myPrintf("RightCurrent free=%u", free); */ send(MotorControllerFrontRightDcLink,  right.rtU.i_DCLink);    break;
+    case 2:  /* myPrintf("LeftSpeed    free=%u", free); */ send(MotorControllerFrontLeftSpeed,    left. rtY.n_mot);       break;
+    case 3:  /* myPrintf("RightSpeed   free=%u", free); */ send(MotorControllerFrontRightSpeed,   right.rtY.n_mot);       break;
+    case 4:  /* myPrintf("LeftError    free=%u", free); */ send(MotorControllerFrontLeftError,    left. rtY.z_errCode);   break;
+    case 5:  /* myPrintf("RightError   free=%u", free); */ send(MotorControllerFrontRightError,   right.rtY.z_errCode);   break;
+    case 6:  /* myPrintf("LeftAngle    free=%u", free); */ send(MotorControllerFrontLeftAngle,    left. rtY.a_elecAngle); break;
+    case 7:  /* myPrintf("RightAngle   free=%u", free); */ send(MotorControllerFrontRightAngle,   right.rtY.a_elecAngle); break;
+    case 8:  /* myPrintf("LeftDcPhaA   free=%u", free); */ send(MotorControllerFrontLeftDcPhaA,   left. rtY.DC_phaA);     break;
+    case 9:  /* myPrintf("RightDcPhaA  free=%u", free); */ send(MotorControllerFrontRightDcPhaA,  right.rtY.DC_phaA);     break;
+    case 10: /* myPrintf("LeftDcPhaB   free=%u", free); */ send(MotorControllerFrontLeftDcPhaB,   left. rtY.DC_phaB);     break;
+    case 11: /* myPrintf("RightDcPhaB  free=%u", free); */ send(MotorControllerFrontRightDcPhaB,  right.rtY.DC_phaB);     break;
+    case 12: /* myPrintf("LeftDcPhaC   free=%u", free); */ send(MotorControllerFrontLeftDcPhaC,   left. rtY.DC_phaC);     break;
+    case 13: /* myPrintf("RightDcPhaC  free=%u", free); */ send(MotorControllerFrontRightDcPhaC,  right.rtY.DC_phaC);     break;
+    case 14: /* myPrintf("LeftChops    free=%u", free); */ send(MotorControllerFrontLeftChops,    left. chops);           break;
+    case 15: /* myPrintf("RightChops   free=%u", free); */ send(MotorControllerFrontRightChops,   right.chops);           break;
+    case 16: /* myPrintf("LeftHall     free=%u", free); */ send(MotorControllerFrontLeftHall,     left.hallBits());       break;
+    case 17: /* myPrintf("RightHall    free=%u", free); */ send(MotorControllerFrontRightHall,    right.hallBits());      break;
+    case 18: /* myPrintf("LeftVoltage  free=%u", free); */ send(MotorControllerFrontLeftVoltage,  batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 19: /* myPrintf("RightVoltage free=%u", free); */ send(MotorControllerFrontRightVoltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 20: /* myPrintf("LeftTemp     free=%u", free); */ send(MotorControllerFrontLeftTemp,     board_temp_deg_c);      break;
+    case 21: /* myPrintf("RightTemp    free=%u", free); */ send(MotorControllerFrontRightTemp,    board_temp_deg_c);  whichToSend = 0; break;
+    default: myPrintf("unreachable");
     }
-
-    asUint8++;
-
-    if (sendState >= Restart)
-        sendState = LeftDcLink;
 }
 #endif
 
@@ -1692,8 +1709,8 @@ void applyDefaultSettings()
     left.rtU.r_inpTgt            = 0;
     left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
     left.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
-    left.rtP.i_max               = (15 * A2BIT_CONV) << 4;
-    left.iDcMax                  = 17;
+    left.rtP.i_max               = (5 * A2BIT_CONV) << 4;
+    left.iDcMax                  = 7;
     left.rtP.n_max               = 1000 << 4;
     left.rtP.id_fieldWeakMax     = (5 * A2BIT_CONV) << 4;
     left.rtP.a_phaAdvMax         = 40 << 4;
@@ -1702,8 +1719,8 @@ void applyDefaultSettings()
     right.rtU.r_inpTgt           = 0;
     right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
     right.rtU.z_ctrlModReq       = uint8_t(ControlMode::OpenMode);
-    right.rtP.i_max              = (15 * A2BIT_CONV) << 4;
-    right.iDcMax                 = 17;
+    right.rtP.i_max              = (5 * A2BIT_CONV) << 4;
+    right.iDcMax                 = 7;
     right.rtP.n_max              = 1000 << 4;
     right.rtP.id_fieldWeakMax    = (5 * A2BIT_CONV) << 4;
     right.rtP.a_phaAdvMax        = 40 << 4;
