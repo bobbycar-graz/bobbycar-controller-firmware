@@ -146,6 +146,11 @@ volatile struct {
 
 std::atomic<uint32_t> timeout;
 
+#ifdef MOTOR_TEST
+int pwm = 0;
+int8_t dir = 1;
+#endif
+
 #ifdef FEATURE_SERIAL_CONTROL
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
 
@@ -243,6 +248,8 @@ void parseCanCommand();
 void sendCanFeedback();
 #endif
 
+void applyDefaultSettings();
+
 } // anonymous namespace
 
 int main()
@@ -293,12 +300,6 @@ int main()
     left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
     left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
 
-    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
-    left.rtP.i_max               = (15 * A2BIT_CONV) << 4;
-    left.rtP.n_max               = 1000 << 4;
-    left.rtP.id_fieldWeakMax     = (5 * A2BIT_CONV) << 4;
-    left.rtP.a_phaAdvMax         = 40 << 4;
-
     right.rtP = rtP_Left;
     right.rtP.b_angleMeasEna      = 0;
     right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
@@ -306,12 +307,6 @@ int main()
     right.rtP.b_fieldWeakEna     = FIELD_WEAK_ENA;
     right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;
     right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;
-
-    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
-    right.rtP.i_max              = (15 * A2BIT_CONV) << 4;
-    right.rtP.n_max              = 1000 << 4;
-    right.rtP.id_fieldWeakMax    = (5 * A2BIT_CONV) << 4;
-    right.rtP.a_phaAdvMax        = 40 << 4;
 
     left.rtM.defaultParam        = &left.rtP;
     left.rtM.dwork               = &left.rtDW;
@@ -322,6 +317,8 @@ int main()
     right.rtM.dwork              = &right.rtDW;
     right.rtM.inputs             = &right.rtU;
     right.rtM.outputs            = &right.rtY;
+
+    applyDefaultSettings();
 
     /* Initialize BLDC controllers */
     BLDC_controller_initialize(&left.rtM);
@@ -343,11 +340,6 @@ int main()
 
 #ifdef FEATURE_CAN
     CAN_Init();
-#endif
-
-#ifdef MOTOR_TEST
-    int pwm = 0;
-    int8_t dir = 1;
 #endif
 
 #ifdef FEATURE_SERIAL_CONTROL
@@ -835,10 +827,14 @@ void CAN_Init()
     sFilterConfig.FilterBank = 0;
     sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
     sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = 0xFFFF; // TODO
-    sFilterConfig.FilterIdLow = 0xFFFF; // TODO
-    sFilterConfig.FilterMaskIdHigh = 0xFFFF; // TODO
-    sFilterConfig.FilterMaskIdLow = 0xFFFF; // TODO
+
+    //
+    //                                 TTRR.....FL
+    sFilterConfig.FilterIdHigh =     0b00000000000; // TODO
+    sFilterConfig.FilterIdLow =      0b00000000000; // TODO
+    sFilterConfig.FilterMaskIdHigh = 0b00000000000; // TODO
+    sFilterConfig.FilterMaskIdLow =  0b00000000000; // TODO
+
     sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
     sFilterConfig.FilterActivation = ENABLE;
     sFilterConfig.SlaveStartFilterBank = 14;
@@ -986,21 +982,45 @@ void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
         return;
     }
 
-
-    myPrintf("StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
-        header.StdId, header.StdId,
-        header.ExtId, header.ExtId,
-        header.IDE, header.IDE,
-        header.RTR, header.RTR,
-        header.DLC, header.DLC,
-        header.Timestamp, header.Timestamp,
-        header.FilterMatchIndex, header.FilterMatchIndex
-    );
-
-    // TODO apply changes and reset timeout qualification
-
-    timeoutCntLeft = 0;
-    timeoutCntRight = 0;
+    switch (header.StdId)
+    {
+    case MotorControllerFrontLeftEnable:         /* myPrintf("MotorControllerFrontLeftEnable");         */ left.enable = *((bool *)buf);      break;
+    case MotorControllerFrontRightEnable:        /* myPrintf("MotorControllerFrontRightEnable");        */ right.enable = *((bool *)buf);     break;
+    case MotorControllerFrontLeftInpTgt:         /* myPrintf("MotorControllerFrontLeftInpTgt");         */ timeoutCntLeft = 0; left.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorControllerFrontRightInpTgt:        /* myPrintf("MotorControllerFrontRightInpTgt");        */ timeoutCntRight = 0; right.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorControllerFrontLeftCtrlTyp:        /* myPrintf("MotorControllerFrontLeftCtrlTyp");        */ left.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightCtrlTyp:       /* myPrintf("MotorControllerFrontRightCtrlTyp");       */ right.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftCtrlMod:        /* myPrintf("MotorControllerFrontLeftCtrlMod");        */ left.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightCtrlMod:       /* myPrintf("MotorControllerFrontRightCtrlMod");       */ right.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftIMotMax:        /* myPrintf("MotorControllerFrontLeftIMotMax");        */ left.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontRightIMotMax:       /* myPrintf("MotorControllerFrontRightIMotMax");       */ right.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontLeftIDcMax:         /* myPrintf("MotorControllerFrontLeftIDcMax");         */ left.iDcMax = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightIDcMax:        /* myPrintf("MotorControllerFrontRightIDcMax");        */ right.iDcMax = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftNMotMax:        /* myPrintf("MotorControllerFrontLeftNMotMax");        */ left.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontRightNMotMax:       /* myPrintf("MotorControllerFrontRightNMotMax");       */ right.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontLeftFieldWeakMax:   /* myPrintf("MotorControllerFrontLeftFieldWeakMax");   */ left.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontRightFieldWeakMax:  /* myPrintf("MotorControllerFrontRightFieldWeakMax");  */ right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorControllerFrontLeftPhaseAdvMax:    /* myPrintf("MotorControllerFrontLeftPhaseAdvMax");    */ left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontRightPhaseAdvMax:   /* myPrintf("MotorControllerFrontRightPhaseAdvMax");   */ right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorControllerFrontLeftBuzzerFreq:     /* myPrintf("MotorControllerFrontLeftBuzzerFreq");     */ buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorControllerFrontRightBuzzerFreq:    /* myPrintf("MotorControllerFrontRightBuzzerFreq");    */ buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorControllerFrontLeftBuzzerPattern:  /* myPrintf("MotorControllerFrontLeftBuzzerPattern");  */ buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorControllerFrontRightBuzzerPattern: /* myPrintf("MotorControllerFrontRightBuzzerPattern"); */ buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorControllerFrontLeftLed:            /* myPrintf("MotorControllerFrontLeftLed");            */ break;
+    case MotorControllerFrontRightLed:           /* myPrintf("MotorControllerFrontRightLed");           */ break;
+    case MotorControllerFrontLeftPoweroff:       /* myPrintf("MotorControllerFrontLeftPoweroff");       */ break;
+    case MotorControllerFrontRightPoweroff:      /* myPrintf("MotorControllerFrontRightPoweroff");      */ break;
+    default:
+        myPrintf("UNKNOWN StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
+                 header.StdId, header.StdId,
+                 header.ExtId, header.ExtId,
+                 header.IDE, header.IDE,
+                 header.RTR, header.RTR,
+                 header.DLC, header.DLC,
+                 header.Timestamp, header.Timestamp,
+                 header.FilterMatchIndex, header.FilterMatchIndex
+                 );
+    }
 }
 
 void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
@@ -1384,10 +1404,7 @@ void poweroff()
 
 void communicationTimeout()
 {
-    left.enable = false;
-    right.enable = true;
-
-    // TODO all the other params
+    applyDefaultSettings();
 
     buzzer.freq = 24;
     buzzer.pattern = 1;
@@ -1400,17 +1417,26 @@ void doMotorTest()
 {
     timeout = 0; // proove, that the controlling code is still running
 
-    left.state.enable = true;
-    left.state.ctrlMod = ControlMode::Voltage;
-    left.state.ctrlTyp = ControlType::FieldOrientedControl;
-    left.state.pwm = pwm;
-    left.state.iMotMax = 2;
 
-    right.state.enable = true;
-    right.state.ctrlMod = ControlMode::Voltage;
-    right.state.ctrlTyp = ControlType::FieldOrientedControl;
-    right.state.pwm = pwm;
-    right.state.iMotMax = 2;
+    left.enable = true;
+    left.rtU.r_inpTgt            = pwm;
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Speed);
+    left.rtP.i_max               = (2 * A2BIT_CONV) << 4;
+    left.iDcMax                  = 4;
+    left.rtP.n_max               = 1000 << 4;
+    left.rtP.id_fieldWeakMax     = (0 * A2BIT_CONV) << 4;
+    left.rtP.a_phaAdvMax         = 40 << 4;
+
+    right.enable = true;
+    right.rtU.r_inpTgt           = pwm;
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Speed);
+    right.rtP.i_max              = (2 * A2BIT_CONV) << 4;
+    right.iDcMax                 = 4;
+    right.rtP.n_max              = 1000 << 4;
+    right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
+    right.rtP.a_phaAdvMax        = 40 << 4;
 
     constexpr auto pwmMax = 250;
 
@@ -1659,6 +1685,29 @@ void sendCanFeedback()
         sendState = LeftDcLink;
 }
 #endif
+
+void applyDefaultSettings()
+{
+    left.enable = true;
+    left.rtU.r_inpTgt            = 0;
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
+    left.rtP.i_max               = (15 * A2BIT_CONV) << 4;
+    left.iDcMax                  = 17;
+    left.rtP.n_max               = 1000 << 4;
+    left.rtP.id_fieldWeakMax     = (5 * A2BIT_CONV) << 4;
+    left.rtP.a_phaAdvMax         = 40 << 4;
+
+    right.enable = true;
+    right.rtU.r_inpTgt           = 0;
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::OpenMode);
+    right.rtP.i_max              = (15 * A2BIT_CONV) << 4;
+    right.iDcMax                 = 17;
+    right.rtP.n_max              = 1000 << 4;
+    right.rtP.id_fieldWeakMax    = (5 * A2BIT_CONV) << 4;
+    right.rtP.a_phaAdvMax        = 40 << 4;
+}
 
 } // anonymous namespace
 
