@@ -98,6 +98,13 @@ CAN_HandleTypeDef     CanHandle;
 char logBuffer[512];
 #endif
 
+constexpr bool isBackBoard =
+#ifdef IS_BACK
+    true
+#else
+    false
+#endif
+    ;
 
 template<std::size_t formatLength, typename ... Targs>
 void myPrintf(const char (&format)[formatLength], Targs ... args)
@@ -1584,32 +1591,33 @@ void applyIncomingCanMessage()
 
     switch (header.StdId)
     {
-    case MotorControllerFrontLeftEnable:         /* myPrintf("MotorControllerFrontLeftEnable");         */ left.enable = *((bool *)buf);      break;
-    case MotorControllerFrontRightEnable:        /* myPrintf("MotorControllerFrontRightEnable");        */ right.enable = *((bool *)buf);     break;
-    case MotorControllerFrontLeftInpTgt:         /* myPrintf("MotorControllerFrontLeftInpTgt");         */ timeoutCntLeft = 0; left.rtU.r_inpTgt = *((int16_t*)buf); break;
-    case MotorControllerFrontRightInpTgt:        /* myPrintf("MotorControllerFrontRightInpTgt");        */ timeoutCntRight = 0; right.rtU.r_inpTgt = *((int16_t*)buf); break;
-    case MotorControllerFrontLeftCtrlTyp:        /* myPrintf("MotorControllerFrontLeftCtrlTyp");        */ left.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightCtrlTyp:       /* myPrintf("MotorControllerFrontRightCtrlTyp");       */ right.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftCtrlMod:        /* myPrintf("MotorControllerFrontLeftCtrlMod");        */ left.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightCtrlMod:       /* myPrintf("MotorControllerFrontRightCtrlMod");       */ right.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftIMotMax:        /* myPrintf("MotorControllerFrontLeftIMotMax");        */ left.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontRightIMotMax:       /* myPrintf("MotorControllerFrontRightIMotMax");       */ right.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontLeftIDcMax:         /* myPrintf("MotorControllerFrontLeftIDcMax");         */ left.iDcMax = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightIDcMax:        /* myPrintf("MotorControllerFrontRightIDcMax");        */ right.iDcMax = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftNMotMax:        /* myPrintf("MotorControllerFrontLeftNMotMax");        */ left.rtP.n_max = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontRightNMotMax:       /* myPrintf("MotorControllerFrontRightNMotMax");       */ right.rtP.n_max = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontLeftFieldWeakMax:   /* myPrintf("MotorControllerFrontLeftFieldWeakMax");   */ left.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontRightFieldWeakMax:  /* myPrintf("MotorControllerFrontRightFieldWeakMax");  */ right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorControllerFrontLeftPhaseAdvMax:    /* myPrintf("MotorControllerFrontLeftPhaseAdvMax");    */ left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontRightPhaseAdvMax:   /* myPrintf("MotorControllerFrontRightPhaseAdvMax");   */ right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
-    case MotorControllerFrontLeftBuzzerFreq:     /* myPrintf("MotorControllerFrontLeftBuzzerFreq");     */ buzzer.freq = *((uint8_t*)buf);    break;
-    case MotorControllerFrontRightBuzzerFreq:    /* myPrintf("MotorControllerFrontRightBuzzerFreq");    */ buzzer.freq = *((uint8_t*)buf);    break;
-    case MotorControllerFrontLeftBuzzerPattern:  /* myPrintf("MotorControllerFrontLeftBuzzerPattern");  */ buzzer.pattern = *((uint8_t*)buf); break;
-    case MotorControllerFrontRightBuzzerPattern: /* myPrintf("MotorControllerFrontRightBuzzerPattern"); */ buzzer.pattern = *((uint8_t*)buf); break;
-    case MotorControllerFrontLeftLed:            /* myPrintf("MotorControllerFrontLeftLed");            */ break;
-    case MotorControllerFrontRightLed:           /* myPrintf("MotorControllerFrontRightLed");           */ break;
-    case MotorControllerFrontLeftPoweroff:       /* myPrintf("MotorControllerFrontLeftPoweroff");       */ break;
-    case MotorControllerFrontRightPoweroff:      /* myPrintf("MotorControllerFrontRightPoweroff");      */ break;
+    using namespace bobbycar::can;
+    case MotorController<isBackBoard, false>::Command::Enable:        left.enable = *((bool *)buf);      break;
+    case MotorController<isBackBoard, true>::Command::Enable:         right.enable = *((bool *)buf);     break;
+    case MotorController<isBackBoard, false>::Command::InpTgt:        timeoutCntLeft = 0; left.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorController<isBackBoard, true>::Command::InpTgt:         timeoutCntRight = 0; right.rtU.r_inpTgt = *((int16_t*)buf); break;
+    case MotorController<isBackBoard, false>::Command::CtrlTyp:       left.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, true>::Command::CtrlTyp:        right.rtP.z_ctrlTypSel = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, false>::Command::CtrlMod:       left.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, true>::Command::CtrlMod:        right.rtU.z_ctrlModReq = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, false>::Command::IMotMax:       left.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true>::Command::IMotMax:        right.rtP.i_max = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::IDcMax:        left.iDcMax = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, true>::Command::IDcMax:         right.iDcMax = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, false>::Command::NMotMax:       left.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, true>::Command::NMotMax:        right.rtP.n_max = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true>::Command::FieldWeakMax:   right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, true>::Command::PhaseAdvMax:    right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::BuzzerFreq:    buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorController<isBackBoard, true>::Command::BuzzerFreq:     buzzer.freq = *((uint8_t*)buf);    break;
+    case MotorController<isBackBoard, false>::Command::BuzzerPattern: buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, true>::Command::BuzzerPattern:  buzzer.pattern = *((uint8_t*)buf); break;
+    case MotorController<isBackBoard, false>::Command::Led:           break;
+    case MotorController<isBackBoard, true>::Command::Led:            break;
+    case MotorController<isBackBoard, false>::Command::Poweroff:      break;
+    case MotorController<isBackBoard, true>::Command::Poweroff:       break;
     default:
 #ifndef CAN_LOG_UNKNOWN_ADDR
         if constexpr (false)
@@ -1624,7 +1632,7 @@ void applyIncomingCanMessage()
                  header.StdId&64?'1':'0',
                  header.StdId&32?'1':'0',
                  header.StdId&16?'1':'0',
-                 header.StdId&8?'1':'0',
+                 header.StdId&8?' 1':'0',
                  header.StdId&4?'1':'0',
 
                  header.StdId&2?'1':'0',
@@ -1676,28 +1684,29 @@ void sendCanFeedback()
 
     switch (whichToSend++)
     {
-    case 0:  /* myPrintf("LeftCurrent  free=%u", free); */ send(MotorControllerFrontLeftDcLink,   left. rtU.i_DCLink);    break;
-    case 1:  /* myPrintf("RightCurrent free=%u", free); */ send(MotorControllerFrontRightDcLink,  right.rtU.i_DCLink);    break;
-    case 2:  /* myPrintf("LeftSpeed    free=%u", free); */ send(MotorControllerFrontLeftSpeed,    left. rtY.n_mot);       break;
-    case 3:  /* myPrintf("RightSpeed   free=%u", free); */ send(MotorControllerFrontRightSpeed,   right.rtY.n_mot);       break;
-    case 4:  /* myPrintf("LeftError    free=%u", free); */ send(MotorControllerFrontLeftError,    left. rtY.z_errCode);   break;
-    case 5:  /* myPrintf("RightError   free=%u", free); */ send(MotorControllerFrontRightError,   right.rtY.z_errCode);   break;
-    case 6:  /* myPrintf("LeftAngle    free=%u", free); */ send(MotorControllerFrontLeftAngle,    left. rtY.a_elecAngle); break;
-    case 7:  /* myPrintf("RightAngle   free=%u", free); */ send(MotorControllerFrontRightAngle,   right.rtY.a_elecAngle); break;
-    case 8:  /* myPrintf("LeftDcPhaA   free=%u", free); */ send(MotorControllerFrontLeftDcPhaA,   left. rtY.DC_phaA);     break;
-    case 9:  /* myPrintf("RightDcPhaA  free=%u", free); */ send(MotorControllerFrontRightDcPhaA,  right.rtY.DC_phaA);     break;
-    case 10: /* myPrintf("LeftDcPhaB   free=%u", free); */ send(MotorControllerFrontLeftDcPhaB,   left. rtY.DC_phaB);     break;
-    case 11: /* myPrintf("RightDcPhaB  free=%u", free); */ send(MotorControllerFrontRightDcPhaB,  right.rtY.DC_phaB);     break;
-    case 12: /* myPrintf("LeftDcPhaC   free=%u", free); */ send(MotorControllerFrontLeftDcPhaC,   left. rtY.DC_phaC);     break;
-    case 13: /* myPrintf("RightDcPhaC  free=%u", free); */ send(MotorControllerFrontRightDcPhaC,  right.rtY.DC_phaC);     break;
-    case 14: /* myPrintf("LeftChops    free=%u", free); */ send(MotorControllerFrontLeftChops,    left. chops);           break;
-    case 15: /* myPrintf("RightChops   free=%u", free); */ send(MotorControllerFrontRightChops,   right.chops);           break;
-    case 16: /* myPrintf("LeftHall     free=%u", free); */ send(MotorControllerFrontLeftHall,     left.hallBits());       break;
-    case 17: /* myPrintf("RightHall    free=%u", free); */ send(MotorControllerFrontRightHall,    right.hallBits());      break;
-    case 18: /* myPrintf("LeftVoltage  free=%u", free); */ send(MotorControllerFrontLeftVoltage,  batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case 19: /* myPrintf("RightVoltage free=%u", free); */ send(MotorControllerFrontRightVoltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case 20: /* myPrintf("LeftTemp     free=%u", free); */ send(MotorControllerFrontLeftTemp,     board_temp_deg_c);      break;
-    case 21: /* myPrintf("RightTemp    free=%u", free); */ send(MotorControllerFrontRightTemp,    board_temp_deg_c);  whichToSend = 0; break;
+    using namespace bobbycar::can;
+    case 0:  send(MotorController<isBackBoard, false>::Feedback::DcLink,  left. rtU.i_DCLink);    break;
+    case 1:  send(MotorController<isBackBoard, true>::Feedback::DcLink,   right.rtU.i_DCLink);    break;
+    case 2:  send(MotorController<isBackBoard, false>::Feedback::Speed,   left. rtY.n_mot);       break;
+    case 3:  send(MotorController<isBackBoard, true>::Feedback::Speed,    right.rtY.n_mot);       break;
+    case 4:  send(MotorController<isBackBoard, false>::Feedback::Error,   left. rtY.z_errCode);   break;
+    case 5:  send(MotorController<isBackBoard, true>::Feedback::Error,    right.rtY.z_errCode);   break;
+    case 6:  send(MotorController<isBackBoard, false>::Feedback::Angle,   left. rtY.a_elecAngle); break;
+    case 7:  send(MotorController<isBackBoard, true>::Feedback::Angle,    right.rtY.a_elecAngle); break;
+    case 8:  send(MotorController<isBackBoard, false>::Feedback::DcPhaA,  left. rtY.DC_phaA);     break;
+    case 9:  send(MotorController<isBackBoard, true>::Feedback::DcPhaA,   right.rtY.DC_phaA);     break;
+    case 10: send(MotorController<isBackBoard, false>::Feedback::DcPhaB,  left. rtY.DC_phaB);     break;
+    case 11: send(MotorController<isBackBoard, true>::Feedback::DcPhaB,   right.rtY.DC_phaB);     break;
+    case 12: send(MotorController<isBackBoard, false>::Feedback::DcPhaC,  left. rtY.DC_phaC);     break;
+    case 13: send(MotorController<isBackBoard, true>::Feedback::DcPhaC,   right.rtY.DC_phaC);     break;
+    case 14: send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops);           break;
+    case 15: send(MotorController<isBackBoard, true>::Feedback::Chops,    right.chops);           break;
+    case 16: send(MotorController<isBackBoard, false>::Feedback::Hall,    left.hallBits());       break;
+    case 17: send(MotorController<isBackBoard, true>::Feedback::Hall,     right.hallBits());      break;
+    case 18: send(MotorController<isBackBoard, false>::Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 19: send(MotorController<isBackBoard, true>::Feedback::Voltage,  batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 20: send(MotorController<isBackBoard, false>::Feedback::Temp,    board_temp_deg_c);      break;
+    case 21: send(MotorController<isBackBoard, true>::Feedback::Temp,     board_temp_deg_c);  whichToSend = 0; break;
     default: myPrintf("unreachable");
     }
 }
