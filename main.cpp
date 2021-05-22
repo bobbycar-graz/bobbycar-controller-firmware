@@ -1171,7 +1171,11 @@ void MX_TIM_Init()
 #endif
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
+#ifdef PETERS_PLATINE
+    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+#else
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+#endif
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_1);
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_3);
@@ -1216,7 +1220,11 @@ void MX_TIM_Init()
 #endif
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
+#ifdef PETERS_PLATINE
+    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+#else
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+#endif
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_1);
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_3);
