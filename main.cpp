@@ -373,7 +373,9 @@ int main()
 
             while ((HAL_GetTick() - tickstart) < wait)
             {
+#ifdef FEATURE_CAN
                 applyIncomingCanMessage();
+#endif
             }
         };
 
@@ -1421,7 +1423,7 @@ void doMotorTest()
     right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
     right.rtP.a_phaAdvMax        = 40 << 4;
 
-    constexpr auto pwmMax = 250;
+    constexpr auto pwmMax = 400;
 
     pwm += dir;
     if (pwm > pwmMax) {
