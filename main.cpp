@@ -45,6 +45,8 @@ extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
 }
 
 namespace {
+const P &defaultP{rtP_Left};
+
 TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
 ADC_HandleTypeDef hadc1;
@@ -180,10 +182,6 @@ int16_t offsetdcl    = 2000;
 int16_t offsetdcr    = 2000;
 
 int16_t batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
-int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
-
-int32_t board_temp_adcFixdt = adc_buffer.temp << 20;  // Fixed-point filter output initialized with current ADC converted to fixed-point
-int16_t board_temp_adcFilt  = adc_buffer.temp;
 int16_t board_temp_deg_c;
 
 struct {
@@ -193,9 +191,9 @@ struct {
     ExtU  rtU;    /* External inputs */
     ExtY  rtY;    /* External outputs */
 
-    bool enable{true};
-    int16_t iDcMax{17};
-    uint32_t chops{};
+    std::atomic<bool> enable{true};
+    std::atomic<int16_t> iDcMax{7};
+    std::atomic<uint32_t> chops{};
 
     uint8_t hallBits() const
     {
@@ -208,8 +206,6 @@ struct {
     uint8_t pattern = 0;
     uint32_t timer = 0;
 } buzzer;
-
-void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
 
 void SystemClock_Config();
 
@@ -256,6 +252,12 @@ void applyIncomingCanMessage();
 void sendCanFeedback();
 #endif
 
+#ifdef FEATURE_BUTTON
+void handleButton();
+#endif
+
+void updateSensors();
+
 void applyDefaultSettings();
 
 } // anonymous namespace
@@ -296,7 +298,7 @@ int main()
 
     enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
 
-    left.rtP = rtP_Left;
+    left.rtP = defaultP;
     left.rtP.b_angleMeasEna      = 0;
 #ifdef PETERS_PLATINE
     left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
@@ -308,7 +310,7 @@ int main()
     left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
     left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
 
-    right.rtP = rtP_Left;
+    right.rtP = defaultP;
     right.rtP.b_angleMeasEna      = 0;
     right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
     right.rtP.b_diagEna          = DIAG_ENA;
@@ -361,7 +363,8 @@ int main()
 
     while (true)
     {
-        const auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
+#ifdef FEATURE_CAN
+        constexpr auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
             uint32_t tickstart = HAL_GetTick();
             uint32_t wait = Delay;
 
@@ -373,13 +376,15 @@ int main()
 
             while ((HAL_GetTick() - tickstart) < wait)
             {
-#ifdef FEATURE_CAN
                 applyIncomingCanMessage();
-#endif
             }
         };
 
+        //DELAY_WITH_CAN_POLL(5); //delay in ms
+#endif
         HAL_Delay(5); //delay in ms
+
+        updateSensors();
 
 #ifdef MOTOR_TEST
         doMotorTest();
@@ -400,28 +405,8 @@ int main()
 #endif
 
 #ifdef FEATURE_BUTTON
-        if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
-        {
-            left.enable = false;
-            right.enable = false;
-
-            while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
-
-            if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
-                __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
-            } else {
-                poweroff();                                         // release power-latch
-            }
-        }
+        handleButton();
 #endif
-
-        // ####### CALC BOARD TEMPERATURE #######
-        filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
-        board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
-        board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
-
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
 
         main_loop_counter++;
     }
@@ -480,24 +465,26 @@ void updateMotors()
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
-    const bool chopL = std::abs(curL_DC) > (left.iDcMax * A2BIT_CONV);
+    const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * A2BIT_CONV);
     if (chopL)
         left.chops++;
 
-    const bool chopR = std::abs(curR_DC) > (right.iDcMax * A2BIT_CONV);
+    const bool chopR = std::abs(curR_DC) > (right.iDcMax.load() * A2BIT_CONV);
     if (chopR)
         right.chops++;
 
     const uint32_t timeoutVal = ++timeout;
+    const bool leftEnable = left.enable.load();
+    const bool rightEnable = right.enable.load();
 
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    if (chopL || timeoutVal > 500 || !left.enable)
+    if (chopL || timeoutVal > 500 || !leftEnable)
         LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         LEFT_TIM->BDTR |= TIM_BDTR_MOE;
 
-    if (chopR || timeoutVal > 500 || !right.enable)
+    if (chopR || timeoutVal > 500 || !rightEnable)
         RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
@@ -524,8 +511,8 @@ void updateMotors()
 #endif
     ;
 
-    const bool enableLFin = left.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
-    const bool enableRFin = right.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
+    const bool enableLFin = leftEnable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
+    const bool enableRFin = rightEnable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
 
     // ========================= LEFT MOTOR ============================
     // Get hall sensors values
@@ -588,30 +575,6 @@ void updateMotors()
 
     /* Indicate task complete */
     OverrunFlag = false;
-}
-
-// ===========================================================
-  /* Low pass filter fixed-point 32 bits: fixdt(1,32,20)
-  * Max:  2047.9375
-  * Min: -2048
-  * Res:  0.0625
-  *
-  * Inputs:       u     = int16
-  * Outputs:      y     = fixdt(1,32,20)
-  * Parameters:   coef  = fixdt(0,16,16) = [0,65535U]
-  *
-  * Example:
-  * If coef = 0.8 (in floating point), then coef = 0.8 * 2^16 = 52429 (in fixed-point)
-  * filtLowPass16(u, 52429, &y);
-  * yint = (int16_t)(y >> 20); // the integer output is the fixed-point ouput shifted by 20 bits
-  */
-void filtLowPass32(int16_t u, uint16_t coef, int32_t *y)
-{
-    int tmp;
-
-    tmp = (int16_t)(u << 4) - (*y >> 16);
-    tmp = std::clamp(tmp, -32768, 32767);  // Overflow protection
-    *y  = coef * tmp + (*y);
 }
 
 // ===========================================================
@@ -1620,6 +1583,10 @@ void applyIncomingCanMessage()
     case MotorController<isBackBoard, true>::Command::FieldWeakMax:   right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, true>::Command::PhaseAdvMax:    right.rtP.a_phaAdvMax = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::CruiseCtrlEna: left.rtP.b_cruiseCtrlEna = *((bool*)buf); break;
+    case MotorController<isBackBoard, true>::Command::CruiseCtrlEna:  right.rtP.b_cruiseCtrlEna = *((bool*)buf); break;
+    case MotorController<isBackBoard, false>::Command::CruiseMotTgt:  left.rtP.n_cruiseMotTgt = *((int16_T*)buf); break;
+    case MotorController<isBackBoard, true>::Command::CruiseMotTgt:   right.rtP.n_cruiseMotTgt = *((int16_T*)buf); break;
     case MotorController<isBackBoard, false>::Command::BuzzerFreq:    buzzer.freq = *((uint8_t*)buf);    break;
     case MotorController<isBackBoard, true>::Command::BuzzerFreq:     buzzer.freq = *((uint8_t*)buf);    break;
     case MotorController<isBackBoard, false>::Command::BuzzerPattern: buzzer.pattern = *((uint8_t*)buf); break;
@@ -1709,8 +1676,8 @@ void sendCanFeedback()
     case 11: send(MotorController<isBackBoard, true>::Feedback::DcPhaB,   right.rtY.DC_phaB);     break;
     case 12: send(MotorController<isBackBoard, false>::Feedback::DcPhaC,  left. rtY.DC_phaC);     break;
     case 13: send(MotorController<isBackBoard, true>::Feedback::DcPhaC,   right.rtY.DC_phaC);     break;
-    case 14: send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops);           break;
-    case 15: send(MotorController<isBackBoard, true>::Feedback::Chops,    right.chops);           break;
+    case 14: send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops.exchange(0)); break;
+    case 15: send(MotorController<isBackBoard, true>::Feedback::Chops,    right.chops.exchange(0)); break;
     case 16: send(MotorController<isBackBoard, false>::Feedback::Hall,    left.hallBits());       break;
     case 17: send(MotorController<isBackBoard, true>::Feedback::Hall,     right.hallBits());      break;
     case 18: send(MotorController<isBackBoard, false>::Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
@@ -1722,27 +1689,78 @@ void sendCanFeedback()
 }
 #endif
 
+#ifdef FEATURE_BUTTON
+void handleButton()
+{
+    if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
+    {
+        left.enable = false;
+        right.enable = false;
+
+        while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
+
+        if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
+            __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
+        } else {
+            poweroff();                                         // release power-latch
+        }
+    }
+}
+#endif
+
+void updateSensors()
+{
+    /* Low pass filter fixed-point 32 bits: fixdt(1,32,20)
+     * Max:  2047.9375
+     * Min: -2048
+     * Res:  0.0625
+     *
+     * Inputs:       u     = int16
+     * Outputs:      y     = fixdt(1,32,20)
+     * Parameters:   coef  = fixdt(0,16,16) = [0,65535U]
+     *
+     * Example:
+     * If coef = 0.8 (in floating point), then coef = 0.8 * 2^16 = 52429 (in fixed-point)
+     * filtLowPass16(u, 52429, &y);
+     * yint = (int16_t)(y >> 20); // the integer output is the fixed-point ouput shifted by 20 bits
+     */
+    constexpr auto filtLowPass32 = [](int16_t u, uint16_t coef, int32_t &y)
+    {
+        int tmp = (int16_t)(u << 4) - (y >> 16);
+        tmp = std::clamp(tmp, -32768, 32767);  // Overflow protection
+        y  = coef * tmp + y;
+    };
+
+    // Fixed-point filter output initialized with current ADC converted to fixed-point
+    static int32_t board_temp_adcFixdt{} /*= adc_buffer.temp << 20*/;
+    filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, board_temp_adcFixdt);
+    int16_t board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
+    board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
+
+    // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
+    static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;
+    filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, batVoltageFixdt);
+    batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
+}
+
 void applyDefaultSettings()
 {
-    left.enable = true;
-    left.rtU.r_inpTgt            = 0;
-    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
-    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
-    left.rtP.i_max               = (5 * A2BIT_CONV) << 4;
-    left.iDcMax                  = 7;
-    left.rtP.n_max               = 1000 << 4;
-    left.rtP.id_fieldWeakMax     = (5 * A2BIT_CONV) << 4;
-    left.rtP.a_phaAdvMax         = 40 << 4;
+    constexpr auto doIt = [](auto &motor){
+        motor.enable = true;
+        motor.rtU.r_inpTgt            = 0;
+        motor.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+        motor.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
+        motor.rtP.i_max               = (5 * A2BIT_CONV) << 4;
+        motor.iDcMax                  = 7;
+        motor.rtP.n_max               = 1000 << 4;
+        motor.rtP.id_fieldWeakMax     = (1 * A2BIT_CONV) << 4;
+        motor.rtP.a_phaAdvMax         = 40 << 4;
+        motor.rtP.b_cruiseCtrlEna     = false;
+        motor.rtP.n_cruiseMotTgt      = 0;
+    };
 
-    right.enable = true;
-    right.rtU.r_inpTgt           = 0;
-    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
-    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::OpenMode);
-    right.rtP.i_max              = (5 * A2BIT_CONV) << 4;
-    right.iDcMax                 = 7;
-    right.rtP.n_max              = 1000 << 4;
-    right.rtP.id_fieldWeakMax    = (5 * A2BIT_CONV) << 4;
-    right.rtP.a_phaAdvMax        = 40 << 4;
+    doIt(left);
+    doIt(right);
 }
 
 } // anonymous namespace
