@@ -68,6 +68,19 @@ DMA_HandleTypeDef hdma_usart3_rx;
 DMA_HandleTypeDef hdma_usart3_tx;
 #endif
 
+volatile struct {
+    uint16_t dcr;
+    uint16_t dcl;
+    uint16_t rl1;
+    uint16_t rl2;
+    uint16_t rr1;
+    uint16_t rr2;
+    uint16_t batt1;
+    uint16_t l_tx2;
+    uint16_t temp;
+    uint16_t l_rx2;
+} adc_buffer;
+
 #ifdef FEATURE_CAN
 CAN_HandleTypeDef     CanHandle;
 
@@ -138,19 +151,6 @@ void myPrintf(const char (&format)[formatLength], Targs ... args)
 #endif
 }
 
-volatile struct {
-    uint16_t dcr;
-    uint16_t dcl;
-    uint16_t rl1;
-    uint16_t rl2;
-    uint16_t rr1;
-    uint16_t rr2;
-    uint16_t batt1;
-    uint16_t l_tx2;
-    uint16_t temp;
-    uint16_t l_rx2;
-} adc_buffer;
-
 // ###############################################################################
 
 std::atomic<uint32_t> timeout;
@@ -172,14 +172,6 @@ std::atomic<int16_t> timeoutCntRight  = 0;
 #endif
 
 uint32_t main_loop_counter;
-
-uint16_t offsetcount = 0;
-int16_t offsetrl1    = 2000;
-int16_t offsetrl2    = 2000;
-int16_t offsetrr1    = 2000;
-int16_t offsetrr2    = 2000;
-int16_t offsetdcl    = 2000;
-int16_t offsetdcr    = 2000;
 
 int16_t batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
 int16_t board_temp_deg_c;
@@ -432,6 +424,14 @@ void updateBuzzer()
 void updateMotors()
 {
     DMA1->IFCR = DMA_IFCR_CTCIF1;
+
+    static uint16_t offsetcount{};
+    static int16_t offsetrl1{2000};
+    static int16_t offsetrl2{2000};
+    static int16_t offsetrr1{2000};
+    static int16_t offsetrr2{2000};
+    static int16_t offsetdcl{2000};
+    static int16_t offsetdcr{2000};
 
     if (offsetcount < 2000) // calibrate ADC offsets
     {
