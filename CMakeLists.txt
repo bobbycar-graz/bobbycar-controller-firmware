@@ -36,12 +36,18 @@ include_directories(
 
 #add_definitions(-DMOTOR_TEST)
 add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
+add_definitions(-DGSCHISSENES_HALL)
+#add_definitions(-DGSCHISSENE_PWM_FREQ)
 #add_definitions(-DFEATURE_BUTTON)
 add_definitions(-DPETERS_PLATINE)
-add_definitions(-DHUARN2)
+#add_definitions(-DHUARN2)
 #add_definitions(-DHUARN3)
-add_definitions(-DFEATURE_SERIAL_CONTROL)
-add_definitions(-DFEATURE_SERIAL_FEEDBACK)
+#add_definitions(-DFEATURE_SERIAL_CONTROL)
+#add_definitions(-DFEATURE_SERIAL_FEEDBACK)
+#add_definitions(-DLOG_TO_SERIAL)
+add_definitions(-DFEATURE_CAN)
+#add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
+add_definitions(-DIS_BACK)
 
 add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
@@ -59,13 +65,16 @@ add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
+    STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_can.c
 
     bobbycar-foc-model/BLDC_controller.h
     bobbycar-foc-model/BLDC_controller.c
     bobbycar-foc-model/BLDC_controller_data.c
     bobbycar-foc-model/rtwtypes.h
 
-    bobbycar-protocol/protocol.h
+    bobbycar-protocol/bobbycar-can.h
+    bobbycar-protocol/bobbycar-common.h
+    bobbycar-protocol/bobbycar-serial.h
 
     startup_stm32f103xe.s
     system_stm32f1xx.c

@@ -23,12 +23,21 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
+#include <cstring>
 
 #include "stm32f1xx_hal.h"
 
 #include "defines.h"
 #include "config.h"
-#include "protocol.h"
+
+#include "bobbycar-common.h"
+#if FEATURE_SERIAL_CONTROL || FEATURE_SERIAL_FEEDBACK
+#include "bobbycar-serial.h"
+#endif
+#ifdef FEATURE_CAN
+#include "bobbycar-can.h"
+#endif
 
 extern "C" {
 #include "BLDC_controller.h"
@@ -36,6 +45,8 @@ extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
 }
 
 namespace {
+const P &defaultP{rtP_Left};
+
 TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
 ADC_HandleTypeDef hadc1;
@@ -70,26 +81,100 @@ volatile struct {
     uint16_t l_rx2;
 } adc_buffer;
 
+#ifdef FEATURE_CAN
+CAN_HandleTypeDef     CanHandle;
+
+/* Definition for CANx clock resources */
+#define CANx                           CAN1
+#define CANx_CLK_ENABLE()              __HAL_RCC_CAN1_CLK_ENABLE()
+#define CANx_GPIO_CLK_ENABLE()         __HAL_RCC_GPIOB_CLK_ENABLE()
+
+#define CANx_FORCE_RESET()             __HAL_RCC_CAN1_FORCE_RESET()
+#define CANx_RELEASE_RESET()           __HAL_RCC_CAN1_RELEASE_RESET()
+
+/* Definition for CANx Pins */
+#define CANx_TX_PIN                    GPIO_PIN_9
+#define CANx_TX_GPIO_PORT              GPIOB
+#define CANx_RX_PIN                    GPIO_PIN_8
+#define CANx_RX_GPIO_PORT              GPIOB
+
+/* Definition for CANx AFIO Remap */
+#define CANx_AFIO_REMAP_CLK_ENABLE()   __HAL_RCC_AFIO_CLK_ENABLE()
+#define CANx_AFIO_REMAP_RX_TX_PIN()    __HAL_AFIO_REMAP_CAN1_2()
+
+/* Definition for CAN's NVIC */
+#define CANx_RX_IRQn                   USB_LP_CAN1_RX0_IRQn
+#define CANx_RX_IRQHandler             USB_LP_CAN1_RX0_IRQHandler
+#define CANx_TX_IRQn                   USB_HP_CAN1_TX_IRQn
+#define CANx_TX_IRQHandler             USB_HP_CAN1_TX_IRQHandler
+#endif
+
+#ifdef LOG_TO_SERIAL
+char logBuffer[512];
+#endif
+
+constexpr bool isBackBoard =
+#ifdef IS_BACK
+    true
+#else
+    false
+#endif
+    ;
+
+template<std::size_t formatLength, typename ... Targs>
+void myPrintf(const char (&format)[formatLength], Targs ... args)
+{
+#ifdef LOG_TO_SERIAL
+#ifdef HUARN2
+#define UART_DMA_CHANNEL DMA1_Channel7
+#endif
+#ifdef HUARN3
+#define UART_DMA_CHANNEL DMA1_Channel2
+#endif
+
+    while (UART_DMA_CHANNEL->CNDTR != 0);
+
+    char processedFormat[formatLength+2];
+    std::copy(std::begin(format), std::end(format), std::begin(processedFormat));
+    processedFormat[formatLength-1] = '\r';
+    processedFormat[formatLength] = '\n';
+    processedFormat[formatLength+1] = '\0';
+
+    const auto size = std::snprintf(logBuffer, sizeof(logBuffer), processedFormat, args ...);
+    if (size < 0)
+        return;
+
+    UART_DMA_CHANNEL->CCR    &= ~DMA_CCR_EN;
+    UART_DMA_CHANNEL->CNDTR   = size;
+    UART_DMA_CHANNEL->CMAR    = uint64_t(logBuffer);
+    UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
+#endif
+}
+
 // ###############################################################################
 
 std::atomic<uint32_t> timeout;
+
+#ifdef MOTOR_TEST
+int pwm = 0;
+int8_t dir = 1;
+#endif
+
+#ifdef FEATURE_SERIAL_CONTROL
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
+
+Command command;
+Feedback feedback;
+#endif
+
+#ifdef FEATURE_CAN
+std::atomic<int16_t> timeoutCntLeft   = 0;
+std::atomic<int16_t> timeoutCntRight  = 0;
+#endif
 
 uint32_t main_loop_counter;
 
-uint16_t offsetcount = 0;
-int16_t offsetrl1    = 2000;
-int16_t offsetrl2    = 2000;
-int16_t offsetrr1    = 2000;
-int16_t offsetrr2    = 2000;
-int16_t offsetdcl    = 2000;
-int16_t offsetdcr    = 2000;
-
 int16_t batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
-int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
-
-int32_t board_temp_adcFixdt = adc_buffer.temp << 20;  // Fixed-point filter output initialized with current ADC converted to fixed-point
-int16_t board_temp_adcFilt  = adc_buffer.temp;
 int16_t board_temp_deg_c;
 
 struct {
@@ -99,23 +184,21 @@ struct {
     ExtU  rtU;    /* External inputs */
     ExtY  rtY;    /* External outputs */
 
-    MotorState state;
+    std::atomic<bool> enable{true};
+    std::atomic<int16_t> iDcMax{7};
+    std::atomic<uint32_t> chops{};
 
-    uint32_t chops = 0;
+    uint8_t hallBits() const
+    {
+        return (rtU.b_hallA ? 0 : 1) | (rtU.b_hallB ? 0 : 2) | (rtU.b_hallC ? 0 : 4);
+    }
 } left, right;
 
 struct {
-    BuzzerState state;
-
+    uint8_t freq = 0;
+    uint8_t pattern = 0;
     uint32_t timer = 0;
 } buzzer;
-
-Command command;
-Feedback feedback;
-
-
-
-void filtLowPass32(int16_t u, uint16_t coef, int32_t *y);
 
 void SystemClock_Config();
 
@@ -127,6 +210,10 @@ void UART2_Init();
 void UART3_Init();
 #endif
 
+#ifdef FEATURE_CAN
+void CAN_Init();
+#endif
+
 void MX_GPIO_Init();
 
 void MX_TIM_Init();
@@ -135,7 +222,14 @@ void MX_ADC1_Init();
 
 void MX_ADC2_Init();
 
+
+#ifdef FEATURE_BUTTON
 void poweroff();
+#endif
+
+#ifdef MOTOR_TEST
+void doMotorTest();
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
 void parseCommand();
@@ -144,6 +238,20 @@ void parseCommand();
 #ifdef FEATURE_SERIAL_FEEDBACK
 void sendFeedback();
 #endif
+
+#ifdef FEATURE_CAN
+void parseCanCommand();
+void applyIncomingCanMessage();
+void sendCanFeedback();
+#endif
+
+#ifdef FEATURE_BUTTON
+void handleButton();
+#endif
+
+void updateSensors();
+
+void applyDefaultSettings();
 
 } // anonymous namespace
 
@@ -181,47 +289,36 @@ int main()
     HAL_ADC_Start(&hadc1);
     HAL_ADC_Start(&hadc2);
 
-    enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
+    {
+        constexpr auto doit = [](auto &motor){
+            motor.rtP = defaultP;
+            motor.rtP.b_angleMeasEna      = false;
+            motor.rtP.b_diagEna           = DIAG_ENA;
+            motor.rtP.b_fieldWeakEna      = FIELD_WEAK_ENA;
+            motor.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
+            motor.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
 
-    left.rtP = rtP_Left;
-    left.rtP.b_angleMeasEna      = 0;
+            motor.rtM.defaultParam        = &motor.rtP;
+            motor.rtM.dwork               = &motor.rtDW;
+            motor.rtM.inputs              = &motor.rtU;
+            motor.rtM.outputs             = &motor.rtY;
+        };
+
+        doit(left);
+        doit(right);
+
+        enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
+
 #ifdef PETERS_PLATINE
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;            // Left motor measured current phases = {iB, iC} -> do NOT change
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
 #else
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;            // Left motor measured current phases = {iA, iB} -> do NOT change
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;
 #endif
-    left.rtP.z_ctrlTypSel        = uint8_t(left.state.ctrlTyp);
-    left.rtP.b_diagEna           = DIAG_ENA;
-    left.rtP.i_max               = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    left.rtP.n_max               = left.state.nMotMax << 4;                       // fixdt(1,16,4)
-    left.rtP.b_fieldWeakEna      = FIELD_WEAK_ENA;
-    left.rtP.id_fieldWeakMax     = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    left.rtP.a_phaAdvMax         = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-    left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
-    left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
 
-    right.rtP = rtP_Left;
-    right.rtP.b_angleMeasEna      = 0;
-    right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;            // Right motor measured current phases = {iB, iC} -> do NOT change
-    right.rtP.z_ctrlTypSel       = uint8_t(right.state.ctrlTyp);
-    right.rtP.b_diagEna          = DIAG_ENA;
-    right.rtP.i_max              = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-    right.rtP.n_max              = right.state.nMotMax << 4;                       // fixdt(1,16,4)
-    right.rtP.b_fieldWeakEna     = FIELD_WEAK_ENA;
-    right.rtP.id_fieldWeakMax    = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-    right.rtP.a_phaAdvMax        = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-    right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
-    right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
+        right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
+    }
 
-    left.rtM.defaultParam        = &left.rtP;
-    left.rtM.dwork               = &left.rtDW;
-    left.rtM.inputs              = &left.rtU;
-    left.rtM.outputs             = &left.rtY;
-
-    right.rtM.defaultParam       = &right.rtP;
-    right.rtM.dwork              = &right.rtDW;
-    right.rtM.inputs             = &right.rtU;
-    right.rtM.outputs            = &right.rtY;
+    applyDefaultSettings();
 
     /* Initialize BLDC controllers */
     BLDC_controller_initialize(&left.rtM);
@@ -229,10 +326,10 @@ int main()
 
     for (int i = 8; i >= 0; i--)
     {
-        buzzer.state.freq = (uint8_t)i;
+        buzzer.freq = (uint8_t)i;
         HAL_Delay(50);
     }
-    buzzer.state.freq = 0;
+    buzzer.freq = 0;
 
 #ifdef HUARN2
     UART2_Init();
@@ -241,9 +338,8 @@ int main()
     UART3_Init();
 #endif
 
-#ifdef MOTOR_TEST
-    int pwm = 0;
-    int8_t dir = 1;
+#ifdef FEATURE_CAN
+    CAN_Init();
 #endif
 
 #ifdef FEATURE_SERIAL_CONTROL
@@ -257,110 +353,62 @@ int main()
 
     while (true)
     {
-        HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+#ifdef FEATURE_CAN
+        constexpr auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
+            uint32_t tickstart = HAL_GetTick();
+            uint32_t wait = Delay;
+
+            /* Add a freq to guarantee minimum wait */
+            if (wait < HAL_MAX_DELAY)
+            {
+                wait += (uint32_t)(uwTickFreq);
+            }
+
+            while ((HAL_GetTick() - tickstart) < wait)
+            {
+                applyIncomingCanMessage();
+            }
+        };
+
+        //DELAY_WITH_CAN_POLL(5); //delay in ms
+#endif
+        HAL_Delay(5); //delay in ms
+
+        updateSensors();
+
+#ifdef MOTOR_TEST
+        doMotorTest();
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
         parseCommand();
 #endif
 
-        timeout = 0;
-
-#ifdef MOTOR_TEST
-        left.state.enable = true;
-        left.state.ctrlMod = ControlMode::Voltage;
-        left.state.ctrlTyp = ControlType::FieldOrientedControl;
-        left.state.pwm = pwm;
-        left.state.iMotMax = 2;
-
-        right.state.enable = true;
-        right.state.ctrlMod = ControlMode::Voltage;
-        right.state.ctrlTyp = ControlType::FieldOrientedControl;
-        right.state.pwm = pwm;
-        right.state.iMotMax = 2;
-
-        constexpr auto pwmMax = 250;
-
-        pwm += dir;
-        if (pwm > pwmMax) {
-          pwm = pwmMax;
-          dir = -1;
-        } else if (pwm < -pwmMax) {
-          pwm = -pwmMax;
-          dir = 1;
-        }
+#ifdef FEATURE_SERIAL_FEEDBACK
+        sendFeedback();
 #endif
 
-        // ####### CALC BOARD TEMPERATURE #######
-        filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
-        board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
-        board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
+#ifdef FEATURE_CAN
+        parseCanCommand();
 
-#ifdef FEATURE_SERIAL_FEEDBACK
-        if (main_loop_counter % 50 != 0) // Send data periodically
-            sendFeedback();
+        sendCanFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
-        if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
-        {
-            left.state.enable = right.state.enable = 0;           // disable motors
-
-            while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
-
-            if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
-                __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
-            } else {
-                poweroff();                                         // release power-latch
-            }
-        }
+        handleButton();
 #endif
 
-        left.rtP.z_ctrlTypSel         = uint8_t(left.state.ctrlTyp);
-        left.rtP.i_max                = (left.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-        left.rtP.n_max                = left.state.nMotMax << 4;                       // fixdt(1,16,4)
-        left.rtP.id_fieldWeakMax      = (left.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-        left.rtP.a_phaAdvMax          = left.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-
-        left.rtU.z_ctrlModReq = uint8_t(left.state.ctrlMod);
-        left.rtU.r_inpTgt     = left.state.pwm;
-
-        right.rtP.z_ctrlTypSel         = uint8_t(right.state.ctrlTyp);
-        right.rtP.i_max                = (right.state.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
-        right.rtP.n_max                = right.state.nMotMax << 4;                       // fixdt(1,16,4)
-        right.rtP.id_fieldWeakMax      = (right.state.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
-        right.rtP.a_phaAdvMax          = right.state.phaseAdvMax << 4;                   // fixdt(1,16,4)
-
-        right.rtU.z_ctrlModReq  = uint8_t(right.state.ctrlMod);
-        right.rtU.r_inpTgt      = right.state.pwm;
-
         main_loop_counter++;
-        timeout++;
     }
 }
 
 namespace {
-void updateBatVoltage()
-{
-    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-    {
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
-    }
-}
-
 void updateBuzzer()
 {
-    if (buzzer.timer % 1000 == 0) // because you get float rounding errors if it would run every time -> not any more, everything converted to fixed-point
-    {
-        filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-        batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
-    }
-
-    //create square wave for buzzer
     buzzer.timer++;
-    if (buzzer.state.freq != 0 && (buzzer.timer / 1000) % (buzzer.state.pattern + 1) == 0)
+    if (buzzer.freq != 0 && (buzzer.timer / 1000) % (buzzer.pattern + 1) == 0)
     {
-        if (buzzer.timer % buzzer.state.freq == 0)
+        if (buzzer.timer % buzzer.freq == 0)
         {
             HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
         }
@@ -374,6 +422,14 @@ void updateBuzzer()
 void updateMotors()
 {
     DMA1->IFCR = DMA_IFCR_CTCIF1;
+
+    static uint16_t offsetcount{};
+    static int16_t offsetrl1{2000};
+    static int16_t offsetrl2{2000};
+    static int16_t offsetrr1{2000};
+    static int16_t offsetrr2{2000};
+    static int16_t offsetdcl{2000};
+    static int16_t offsetdcr{2000};
 
     if (offsetcount < 2000) // calibrate ADC offsets
     {
@@ -407,24 +463,26 @@ void updateMotors()
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
-    const bool chopL = std::abs(curL_DC) > (left.state.iDcMax * A2BIT_CONV);
+    const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * A2BIT_CONV);
     if (chopL)
         left.chops++;
 
-    const bool chopR = std::abs(curR_DC) > (right.state.iDcMax * A2BIT_CONV);
+    const bool chopR = std::abs(curR_DC) > (right.iDcMax.load() * A2BIT_CONV);
     if (chopR)
         right.chops++;
 
-    const auto timeoutVal = timeout.load();
+    const uint32_t timeoutVal = ++timeout;
+    const bool leftEnable = left.enable.load();
+    const bool rightEnable = right.enable.load();
 
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    if (chopL || timeoutVal > TIMEOUT || !left.state.enable)
+    if (chopL || timeoutVal > 500 || !leftEnable)
         LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         LEFT_TIM->BDTR |= TIM_BDTR_MOE;
 
-    if (chopR || timeoutVal > TIMEOUT || !right.state.enable)
+    if (chopR || timeoutVal > 500 || !rightEnable)
         RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
         RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
@@ -451,8 +509,8 @@ void updateMotors()
 #endif
     ;
 
-    const bool enableLFin = left.state.enable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
-    const bool enableRFin = right.state.enable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
+    const bool enableLFin = leftEnable && left.rtY.z_errCode == 0 && (right.rtY.z_errCode == 0 || ignoreOtherMotor);
+    const bool enableRFin = rightEnable && (left.rtY.z_errCode == 0 || ignoreOtherMotor) && right.rtY.z_errCode == 0;
 
     // ========================= LEFT MOTOR ============================
     // Get hall sensors values
@@ -515,30 +573,6 @@ void updateMotors()
 
     /* Indicate task complete */
     OverrunFlag = false;
-}
-
-// ===========================================================
-  /* Low pass filter fixed-point 32 bits: fixdt(1,32,20)
-  * Max:  2047.9375
-  * Min: -2048
-  * Res:  0.0625
-  *
-  * Inputs:       u     = int16
-  * Outputs:      y     = fixdt(1,32,20)
-  * Parameters:   coef  = fixdt(0,16,16) = [0,65535U]
-  *
-  * Example:
-  * If coef = 0.8 (in floating point), then coef = 0.8 * 2^16 = 52429 (in fixed-point)
-  * filtLowPass16(u, 52429, &y);
-  * yint = (int16_t)(y >> 20); // the integer output is the fixed-point ouput shifted by 20 bits
-  */
-void filtLowPass32(int16_t u, uint16_t coef, int32_t *y)
-{
-    int tmp;
-
-    tmp = (int16_t)(u << 4) - (*y >> 16);
-    tmp = std::clamp(tmp, -32768, 32767);  // Overflow protection
-    *y  = coef * tmp + (*y);
 }
 
 // ===========================================================
@@ -736,6 +770,217 @@ void UART3_Init()
 }
 #endif
 
+#ifdef FEATURE_CAN
+void CAN_MspInit(CAN_HandleTypeDef *hcan);
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan);
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan);
+void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle);
+void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan);
+
+void CAN_Init()
+{
+    myPrintf("CAN_Init() called");
+
+    /* Configure the CAN peripheral */
+    CanHandle.Instance = CANx;
+
+    CanHandle.MspInitCallback = CAN_MspInit;
+    CanHandle.MspDeInitCallback = CAN_MspDeInit;
+
+    CanHandle.Init.TimeTriggeredMode = DISABLE;
+    CanHandle.Init.AutoBusOff = ENABLE;
+    CanHandle.Init.AutoWakeUp = DISABLE;
+    CanHandle.Init.AutoRetransmission = ENABLE;
+    CanHandle.Init.ReceiveFifoLocked = DISABLE;
+    CanHandle.Init.TransmitFifoPriority = DISABLE;
+    CanHandle.Init.Mode = CAN_MODE_NORMAL;
+
+    CanHandle.Init.SyncJumpWidth = CAN_SJW_1TQ;
+    CanHandle.Init.TimeSeg1 = CAN_BS1_3TQ;
+    CanHandle.Init.TimeSeg2 = CAN_BS2_4TQ;
+    CanHandle.Init.Prescaler = 16;
+
+    if (const auto result = HAL_CAN_Init(&CanHandle); result == HAL_OK)
+        myPrintf("HAL_CAN_Init() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_Init() failed with %i", result);
+        while (true);
+    }
+
+    {
+        /* Configure the CAN Filter */
+        CAN_FilterTypeDef  sFilterConfig;
+        sFilterConfig.FilterBank = 0;
+        sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+        sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+
+        //
+        //                                 TTRR.....FL
+        sFilterConfig.FilterIdHigh =     0b00000000000;
+        sFilterConfig.FilterIdLow =      0b00000000000;
+        sFilterConfig.FilterMaskIdHigh = 0b00000000000;
+        sFilterConfig.FilterMaskIdLow =  0b11110000010;
+        //                               0b0000.....0.
+
+
+        sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+        sFilterConfig.FilterActivation = CAN_FILTER_ENABLE;
+        sFilterConfig.SlaveStartFilterBank = 14;
+
+        if (const auto result = HAL_CAN_ConfigFilter(&CanHandle, &sFilterConfig); result == HAL_OK)
+            myPrintf("HAL_CAN_ConfigFilter() succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_ConfigFilter() failed with %i", result);
+            while (true);
+        }
+    }
+
+    if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID, CAN_RxFifo0MsgPendingCallback); result == HAL_OK)
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID failed with %i", result);
+        while (true);
+    }
+
+    if (false)
+    {
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
+
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
+
+        if (const auto result = HAL_CAN_RegisterCallback(&CanHandle, HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID, CAN_TxMailboxCompleteCallback); result == HAL_OK)
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID failed with %i", result);
+            while (true);
+        }
+    }
+
+    /* Start the CAN peripheral */
+    if (const auto result = HAL_CAN_Start(&CanHandle); result == HAL_OK)
+        myPrintf("HAL_CAN_Start() succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_Start() failed with %i", result);
+        while (true);
+    }
+
+    /* Activate CAN RX notification */
+    if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_RX_FIFO0_MSG_PENDING); result == HAL_OK)
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_RX_FIFO0_MSG_PENDING succeeded");
+    else
+    {
+        myPrintf("HAL_CAN_ActivateNotification() CAN_IT_RX_FIFO0_MSG_PENDING failed with %i", result);
+        while (true);
+    }
+
+    if (false)
+    {
+        /* Activate CAN TX notification */
+        if (const auto result = HAL_CAN_ActivateNotification(&CanHandle, CAN_IT_TX_MAILBOX_EMPTY); result == HAL_OK)
+            myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY succeeded");
+        else
+        {
+            myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY failed with %i", result);
+            while (true);
+        }
+    }
+}
+
+void CAN_MspInit(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_MspInit() called");
+
+    GPIO_InitTypeDef   GPIO_InitStruct;
+
+    /*##-1- Enable peripherals and GPIO Clocks #################################*/
+    /* CAN1 Periph clock enable */
+    CANx_CLK_ENABLE();
+    /* Enable GPIO clock ****************************************/
+    CANx_GPIO_CLK_ENABLE();
+    /* Enable AFIO clock and Remap CAN PINs to PB8 and PB9*******/
+    CANx_AFIO_REMAP_CLK_ENABLE();
+    CANx_AFIO_REMAP_RX_TX_PIN();
+
+    /*##-2- Configure peripheral GPIO ##########################################*/
+    /* CAN1 TX GPIO pin configuration */
+    GPIO_InitStruct.Pin = CANx_TX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(CANx_TX_GPIO_PORT, &GPIO_InitStruct);
+
+    /* CAN1 RX GPIO pin configuration */
+    GPIO_InitStruct.Pin = CANx_RX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(CANx_RX_GPIO_PORT, &GPIO_InitStruct);
+
+    /*##-3- Configure the NVIC #################################################*/
+    /* NVIC configuration for CAN1 Reception complete interrupt */
+    HAL_NVIC_SetPriority(CANx_RX_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(CANx_RX_IRQn);
+
+    HAL_NVIC_SetPriority(CANx_TX_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(CANx_TX_IRQn);
+}
+
+void CAN_MspDeInit(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_MspDeInit() called");
+
+    /*##-1- Reset peripherals ##################################################*/
+    CANx_FORCE_RESET();
+    CANx_RELEASE_RESET();
+
+    /*##-2- Disable peripherals and GPIO Clocks ################################*/
+    /* De-initialize the CAN1 TX GPIO pin */
+    HAL_GPIO_DeInit(CANx_TX_GPIO_PORT, CANx_TX_PIN);
+    /* De-initialize the CAN1 RX GPIO pin */
+    HAL_GPIO_DeInit(CANx_RX_GPIO_PORT, CANx_RX_PIN);
+
+    /*##-4- Disable the NVIC for CAN reception #################################*/
+    HAL_NVIC_DisableIRQ(CANx_RX_IRQn);
+}
+
+void CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
+{
+    //myPrintf("CAN_RxFifo0MsgPendingCallback() called");
+
+    applyIncomingCanMessage();
+}
+
+void CAN_TxMailboxCompleteCallback(CAN_HandleTypeDef *hcan)
+{
+    myPrintf("CAN_TxMailboxCompleteCallback() called");
+
+    // slightly yucky, but we don't want to block inside the IRQ handler
+    //if (HAL_CAN_GetTxMailboxesFreeLevel(hcan) >= 2)
+    //{
+    //    can_feedc0de_poll();
+    //}
+}
+#endif
+
 void MX_GPIO_Init()
 {
     GPIO_InitTypeDef GPIO_InitStruct;
@@ -887,7 +1132,11 @@ void MX_TIM_Init()
 #endif
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
+#ifdef PETERS_PLATINE
+    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+#else
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+#endif
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_1);
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_3);
@@ -932,7 +1181,11 @@ void MX_TIM_Init()
 #endif
     sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
     sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
+#ifdef PETERS_PLATINE
+    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+#else
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+#endif
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_1);
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_2);
     HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_3);
@@ -1084,25 +1337,78 @@ void MX_ADC2_Init()
     __HAL_ADC_ENABLE(&hadc2);
 }
 
+#ifdef FEATURE_BUTTON
 void poweroff()
 {
-  //  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
-        buzzer.state.pattern = 0;
-        left.state.enable = right.state.enable = 0;
-        for (int i = 0; i < 8; i++) {
-            buzzer.state.freq = (uint8_t)i;
-            HAL_Delay(50);
-        }
-        HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
-        for (int i = 0; i < 5; i++)
-            HAL_Delay(1000);
-  //  }
+//  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
+    buzzer.pattern = 0;
+    left.enable = false;
+    right.enable = 0;
+
+    for (int i = 0; i < 8; i++) {
+        buzzer.freq = (uint8_t)i;
+        HAL_Delay(50);
+    }
+    HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
+    for (int i = 0; i < 5; i++)
+        HAL_Delay(1000);
+//  }
 }
+#endif
+
+void communicationTimeout()
+{
+    applyDefaultSettings();
+
+    buzzer.freq = 24;
+    buzzer.pattern = 1;
+
+    HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+}
+
+#ifdef MOTOR_TEST
+void doMotorTest()
+{
+    timeout = 0; // proove, that the controlling code is still running
+
+
+    left.enable = true;
+    left.rtU.r_inpTgt            = pwm;
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Speed);
+    left.rtP.i_max               = (2 * A2BIT_CONV) << 4;
+    left.iDcMax                  = 4;
+    left.rtP.n_max               = 1000 << 4;
+    left.rtP.id_fieldWeakMax     = (0 * A2BIT_CONV) << 4;
+    left.rtP.a_phaAdvMax         = 40 << 4;
+
+    right.enable = true;
+    right.rtU.r_inpTgt           = pwm;
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Speed);
+    right.rtP.i_max              = (2 * A2BIT_CONV) << 4;
+    right.iDcMax                 = 4;
+    right.rtP.n_max              = 1000 << 4;
+    right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
+    right.rtP.a_phaAdvMax        = 40 << 4;
+
+    constexpr auto pwmMax = 400;
+
+    pwm += dir;
+    if (pwm > pwmMax) {
+        pwm = pwmMax;
+        dir = -1;
+    } else if (pwm < -pwmMax) {
+        pwm = -pwmMax;
+        dir = 1;
+    }
+}
+#endif
 
 #ifdef FEATURE_SERIAL_CONTROL
 void parseCommand()
 {
-    bool any_parsed{false};
+    timeout = 0; // proove, that the controlling code is still running
 
     for (int i = 0; i < 1; i++)
     {
@@ -1113,47 +1419,59 @@ void parseCommand()
         if (command.checksum != checksum)
             continue;
 
-        left.state = command.left;
-        right.state = command.right;
+        left.iDcMax = command.left.iDcMax;
 
-        buzzer.state = command.buzzer;
+        left.rtP.z_ctrlTypSel    = uint8_t(command.left.ctrlTyp);
+        left.rtP.i_max           = (command.left.iMotMax * A2BIT_CONV) << 4;
+        left.rtP.n_max           = command.left.nMotMax << 4;
+        left.rtP.id_fieldWeakMax = (command.left.fieldWeakMax * A2BIT_CONV) << 4;
+        left.rtP.a_phaAdvMax     = command.left.phaseAdvMax << 4;
+        left.rtU.z_ctrlModReq    = uint8_t(command.left.ctrlMod);
+        left.rtU.r_inpTgt        = command.left.pwm;
 
+        right.iDcMax = command.right.iDcMax;
+
+        right.rtP.z_ctrlTypSel    = uint8_t(command.right.ctrlTyp);
+        right.rtP.i_max           = (command.right.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        right.rtP.n_max           = command.right.nMotMax << 4;                       // fixdt(1,16,4)
+        right.rtP.id_fieldWeakMax = (command.right.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        right.rtP.a_phaAdvMax     = command.right.phaseAdvMax << 4;                   // fixdt(1,16,4)
+        right.rtU.z_ctrlModReq    = uint8_t(command.right.ctrlMod);
+        right.rtU.r_inpTgt        = command.right.pwm;
+
+        buzzer.freq = command.buzzer.freq;
+        buzzer.pattern = command.buzzer.pattern;
+
+#ifdef FEATURE_BUTTON
         if (command.poweroff)
             poweroff();
+#endif
 
         HAL_GPIO_WritePin(LED_PORT, LED_PIN, command.led ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
         command.start     = Command::INVALID_HEADER; // Change the Start Frame for timeout detection in the next cycle
         timeoutCntSerial  = 0;                       // Reset the timeout counter
 
-        any_parsed = true;
-        break;
+        return;
     }
 
-    if (!any_parsed)
+    if (timeoutCntSerial++ >= 100) // Timeout qualification
     {
-        if (timeoutCntSerial++ >= 100) // Timeout qualification
+        timeoutCntSerial  = 100; // Limit timout counter value
+
+        communicationTimeout();
+
+        // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
+        if (main_loop_counter % 25 == 0)
         {
-            timeoutCntSerial  = 100; // Limit timout counter value
-
-            left.state = right.state = {.enable=true};
-
-            buzzer.state = { 24, 1 };
-
-            HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
-
-            // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
-            if (main_loop_counter % 25 == 0)
-            {
 #ifdef HUARN2
-                HAL_UART_DMAStop(&huart2);
-                HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
+            HAL_UART_DMAStop(&huart2);
+            HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
 #ifdef HUARN3
-                HAL_UART_DMAStop(&huart3);
-                HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
+            HAL_UART_DMAStop(&huart3);
+            HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
 #endif
-            }
         }
     }
 }
@@ -1186,10 +1504,8 @@ void sendFeedback()
     feedback.left.current = left.rtU.i_DCLink;
     feedback.right.current = right.rtU.i_DCLink;
 
-    feedback.left.chops = left.chops;
-    feedback.right.chops = right.chops;
-    left.chops = 0;
-    right.chops = 0;
+    feedback.left.chops = left.chops.exchange(0);
+    feedback.right.chops = right.chops.exchange(0);
 
     feedback.left.hallA = left.rtU.b_hallA;
     feedback.left.hallB = left.rtU.b_hallB;
@@ -1210,6 +1526,243 @@ void sendFeedback()
     UART_DMA_CHANNEL->CCR    |= DMA_CCR_EN;
 }
 #endif
+
+#ifdef FEATURE_CAN
+void parseCanCommand()
+{
+    timeout = 0; // proove, that the controlling code is still running
+
+    const auto l = ++timeoutCntLeft;
+    const auto r = ++timeoutCntRight;
+    if (l >= 99 || r >= 99)
+    {
+        if (l > 100)
+            timeoutCntLeft = 100;
+        if (r > 100)
+            timeoutCntRight = 100;
+
+        communicationTimeout();
+    }
+}
+
+void applyIncomingCanMessage()
+{
+    CAN_RxHeaderTypeDef header;
+    uint8_t buf[8];
+    if (const auto result = HAL_CAN_GetRxMessage(&CanHandle, CAN_RX_FIFO0, &header, buf); result != HAL_OK)
+    {
+        myPrintf("HAL_CAN_GetRxMessage() failed with %i", result);
+        //while (true);
+        return;
+    }
+
+    switch (header.StdId)
+    {
+    using namespace bobbycar::can;
+    case MotorController<isBackBoard, false>::Command::Enable:        left .enable = *((bool *)buf);                      break;
+    case MotorController<isBackBoard, true> ::Command::Enable:        right.enable = *((bool *)buf);                      break;
+    case MotorController<isBackBoard, false>::Command::InpTgt:        left. rtU.r_inpTgt = *((int16_t*)buf); timeoutCntLeft  = 0; break;
+    case MotorController<isBackBoard, true> ::Command::InpTgt:        right.rtU.r_inpTgt = *((int16_t*)buf); timeoutCntRight = 0; break;
+    case MotorController<isBackBoard, false>::Command::CtrlTyp:       left .rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, true> ::Command::CtrlTyp:       right.rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::CtrlMod:       left .rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, true> ::Command::CtrlMod:       right.rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::IMotMax:       left .rtP.i_max           = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::IMotMax:       right.rtP.i_max           = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::IDcMax:        left .iDcMax              = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, true> ::Command::IDcMax:        right.iDcMax              = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::NMotMax:       left .rtP.n_max           = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::NMotMax:       right.rtP.n_max           = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left .rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::PhaseAdvMax:   right.rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::CruiseCtrlEna: left .rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
+    case MotorController<isBackBoard, true> ::Command::CruiseCtrlEna: right.rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
+    case MotorController<isBackBoard, false>::Command::CruiseMotTgt:  left .rtP.n_cruiseMotTgt  = *((int16_T*)buf);       break;
+    case MotorController<isBackBoard, true> ::Command::CruiseMotTgt:  right.rtP.n_cruiseMotTgt  = *((int16_T*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::BuzzerFreq:
+    case MotorController<isBackBoard, true> ::Command::BuzzerFreq:    buzzer.freq               = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::BuzzerPattern:
+    case MotorController<isBackBoard, true> ::Command::BuzzerPattern: buzzer.pattern            = *((uint8_t*)buf);       break;
+    case MotorController<isBackBoard, false>::Command::Led:
+    case MotorController<isBackBoard, true> ::Command::Led:
+        HAL_GPIO_WritePin(LED_PORT, LED_PIN, *((bool*)buf) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        break;
+    case MotorController<isBackBoard, false>::Command::Poweroff:
+    case MotorController<isBackBoard, true>::Command::Poweroff:
+#ifdef FEATURE_BUTTON
+        if (*((bool*)buf))
+            poweroff();
+#endif
+        break;
+    default:
+#ifndef CAN_LOG_UNKNOWN_ADDR
+        if constexpr (false)
+#endif
+        myPrintf("UNKNOWN %c%c %c%c %c%c%c%c%c %c%c %s",
+                 header.StdId&1024?'1':'0',
+                 header.StdId&512?'1':'0',
+
+                 header.StdId&256?'1':'0',
+                 header.StdId&128?'1':'0',
+
+                 header.StdId&64?'1':'0',
+                 header.StdId&32?'1':'0',
+                 header.StdId&16?'1':'0',
+                 header.StdId&8?'1':'0',
+                 header.StdId&4?'1':'0',
+
+                 header.StdId&2?'1':'0',
+                 header.StdId&1?'1':'0',
+
+                 bobbycarCanIdDesc(header.StdId)
+        );
+
+        if constexpr (false)
+        myPrintf("UNKNOWN StdId=%x %u ExtId=%x %u IDE=%x %u RTR=%x %u DLC=%x %u Timestamp=%x %u FilterMatchIndex=%x %u",
+                 header.StdId, header.StdId,
+                 header.ExtId, header.ExtId,
+                 header.IDE, header.IDE,
+                 header.RTR, header.RTR,
+                 header.DLC, header.DLC,
+                 header.Timestamp, header.Timestamp,
+                 header.FilterMatchIndex, header.FilterMatchIndex
+        );
+    }
+}
+
+void sendCanFeedback()
+{
+    const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
+    if (!free)
+        return;
+
+    constexpr auto send = [](uint32_t addr, auto value){
+        CAN_TxHeaderTypeDef header;
+        header.StdId = addr;
+        header.ExtId = 0x01;
+        header.RTR = CAN_RTR_DATA;
+        header.IDE = CAN_ID_STD;
+        header.DLC = sizeof(value);
+        header.TransmitGlobalTime = DISABLE;
+
+        uint8_t buf[8] {0};
+        std::memcpy(buf, &value, sizeof(value));
+
+        static uint32_t TxMailbox;
+        if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
+        {
+            myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+            //while (true);
+        }
+    };
+
+    static uint8_t whichToSend{};
+
+    switch (whichToSend++)
+    {
+    using namespace bobbycar::can;
+    case 0:  send(MotorController<isBackBoard, false>::Feedback::DcLink,  left. rtU.i_DCLink);      break;
+    case 1:  send(MotorController<isBackBoard, true>:: Feedback::DcLink,  right.rtU.i_DCLink);      break;
+    case 2:  send(MotorController<isBackBoard, false>::Feedback::Speed,   left. rtY.n_mot);         break;
+    case 3:  send(MotorController<isBackBoard, true>:: Feedback::Speed,   right.rtY.n_mot);         break;
+    case 4:  send(MotorController<isBackBoard, false>::Feedback::Error,   left. rtY.z_errCode);     break;
+    case 5:  send(MotorController<isBackBoard, true>:: Feedback::Error,   right.rtY.z_errCode);     break;
+    case 6:  send(MotorController<isBackBoard, false>::Feedback::Angle,   left. rtY.a_elecAngle);   break;
+    case 7:  send(MotorController<isBackBoard, true>:: Feedback::Angle,   right.rtY.a_elecAngle);   break;
+    case 8:  send(MotorController<isBackBoard, false>::Feedback::DcPhaA,  left. rtY.DC_phaA);       break;
+    case 9:  send(MotorController<isBackBoard, true>:: Feedback::DcPhaA,  right.rtY.DC_phaA);       break;
+    case 10: send(MotorController<isBackBoard, false>::Feedback::DcPhaB,  left. rtY.DC_phaB);       break;
+    case 11: send(MotorController<isBackBoard, true>:: Feedback::DcPhaB,  right.rtY.DC_phaB);       break;
+    case 12: send(MotorController<isBackBoard, false>::Feedback::DcPhaC,  left. rtY.DC_phaC);       break;
+    case 13: send(MotorController<isBackBoard, true>:: Feedback::DcPhaC,  right.rtY.DC_phaC);       break;
+    case 14: send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops.exchange(0)); break;
+    case 15: send(MotorController<isBackBoard, true>:: Feedback::Chops,   right.chops.exchange(0)); break;
+    case 16: send(MotorController<isBackBoard, false>::Feedback::Hall,    left.hallBits());         break;
+    case 17: send(MotorController<isBackBoard, true>:: Feedback::Hall,    right.hallBits());        break;
+    case 18: send(MotorController<isBackBoard, false>::Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 19: send(MotorController<isBackBoard, true>:: Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
+    case 20: send(MotorController<isBackBoard, false>::Feedback::Temp,    board_temp_deg_c);        break;
+    case 21: send(MotorController<isBackBoard, true>:: Feedback::Temp,    board_temp_deg_c);  whichToSend = 0; break;
+    default: myPrintf("unreachable");
+    }
+}
+#endif
+
+#ifdef FEATURE_BUTTON
+void handleButton()
+{
+    if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN))
+    {
+        left.enable = false;
+        right.enable = false;
+
+        while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
+
+        if(__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)) {               // do not power off after software reset (from a programmer/debugger)
+            __HAL_RCC_CLEAR_RESET_FLAGS();                      // clear reset flags
+        } else {
+            poweroff();                                         // release power-latch
+        }
+    }
+}
+#endif
+
+void updateSensors()
+{
+    /* Low pass filter fixed-point 32 bits: fixdt(1,32,20)
+     * Max:  2047.9375
+     * Min: -2048
+     * Res:  0.0625
+     *
+     * Inputs:       u     = int16
+     * Outputs:      y     = fixdt(1,32,20)
+     * Parameters:   coef  = fixdt(0,16,16) = [0,65535U]
+     *
+     * Example:
+     * If coef = 0.8 (in floating point), then coef = 0.8 * 2^16 = 52429 (in fixed-point)
+     * filtLowPass16(u, 52429, &y);
+     * yint = (int16_t)(y >> 20); // the integer output is the fixed-point ouput shifted by 20 bits
+     */
+    constexpr auto filtLowPass32 = [](int16_t u, uint16_t coef, int32_t &y)
+    {
+        int tmp = (int16_t)(u << 4) - (y >> 16);
+        tmp = std::clamp(tmp, -32768, 32767);  // Overflow protection
+        y  = coef * tmp + y;
+    };
+
+    // Fixed-point filter output initialized with current ADC converted to fixed-point
+    static int32_t board_temp_adcFixdt{} /*= adc_buffer.temp << 20*/;
+    filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, board_temp_adcFixdt);
+    int16_t board_temp_adcFilt  = (int16_t)(board_temp_adcFixdt >> 20);  // convert fixed-point to integer
+    board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
+
+    // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
+    static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;
+    filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, batVoltageFixdt);
+    batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
+}
+
+void applyDefaultSettings()
+{
+    constexpr auto doIt = [](auto &motor){
+        motor.enable = true;
+        motor.rtU.r_inpTgt            = 0;
+        motor.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+        motor.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
+        motor.rtP.i_max               = (5 * A2BIT_CONV) << 4;
+        motor.iDcMax                  = 7;
+        motor.rtP.n_max               = 1000 << 4;
+        motor.rtP.id_fieldWeakMax     = (1 * A2BIT_CONV) << 4;
+        motor.rtP.a_phaAdvMax         = 40 << 4;
+        motor.rtP.b_cruiseCtrlEna     = false;
+        motor.rtP.n_cruiseMotTgt      = 0;
+    };
+
+    doIt(left);
+    doIt(right);
+}
 
 } // anonymous namespace
 
@@ -1346,7 +1899,6 @@ extern "C" void DMA1_Channel1_IRQHandler()
 
     /* USER CODE END DMA1_Channel1_IRQn 0 */
     updateMotors();
-    updateBatVoltage();
     updateBuzzer();
     /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
 
@@ -1407,5 +1959,17 @@ extern "C" void DMA1_Channel3_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel3_IRQn 1 */
 
     /* USER CODE END DMA1_Channel3_IRQn 1 */
+}
+#endif
+
+#ifdef FEATURE_CAN
+extern "C" void CANx_RX_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&CanHandle);
+}
+
+extern "C" void CANx_TX_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&CanHandle);
 }
 #endif

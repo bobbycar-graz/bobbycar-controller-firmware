@@ -1,17 +1,11 @@
 #pragma once
 
-#ifdef PETERS_PLATINE
+#ifdef GSCHISSENE_PWM_FREQ
 #define PWM_FREQ            12000     // PWM frequency in Hz
 #else
 #define PWM_FREQ            16000     // PWM frequency in Hz
 #endif
 #define DEAD_TIME              48     // PWM deadtime
-#ifdef MOTOR_TEST
-  #define DELAY_IN_MAIN_LOOP    20
-#else
-  #define DELAY_IN_MAIN_LOOP    5
-#endif
-#define TIMEOUT                 5     // number of wrong / missing input commands before emergency off
 #define A2BIT_CONV             50     // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
 
 // ADC conversion time definitions
@@ -50,13 +44,7 @@
 #define BAT_CALIB_REAL_VOLTAGE  3970      // input voltage measured by multimeter (multiplied by 100). For example 43.00 V * 100 = 4300
 #define BAT_CALIB_ADC           1492      // adc-value measured by mainboard (value nr 5 on UART debug output)
 
-#define BAT_CELLS               10        // battery number of cells. Normal Hoverboard battery: 10s
-#define BAT_LOW_LVL1_ENABLE     0         // to beep or not to beep, 1 or 0
-#define BAT_LOW_LVL2_ENABLE     1         // to beep or not to beep, 1 or 0
-#define BAT_LOW_LVL1            (360 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // gently beeps at this voltage level. [V*100/cell]. In this case 3.60 V/cell
-#define BAT_LOW_LVL2            (350 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // your battery is almost empty. Charge now! [V*100/cell]. In this case 3.50 V/cell
-#define BAT_LOW_DEAD            (337 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // undervoltage poweroff. (while not driving) [V*100/cell]. In this case 3.37 V/cell
-
+#define BAT_CELLS               12        // battery number of cells. Normal Hoverboard battery: 10s
 
 /* Board overheat detection: the sensor is inside the STM/GD chip.
  * It is very inaccurate without calibration (up to 45°C). So only enable this funcion after calibration!
@@ -70,13 +58,6 @@
 #define TEMP_CAL_LOW_DEG_C      358       // temperature 1: measured temperature [°C * 10]. Here 35.8 °C
 #define TEMP_CAL_HIGH_ADC       1588      // temperature 2: ADC value
 #define TEMP_CAL_HIGH_DEG_C     489       // temperature 2: measured temperature [°C * 10]. Here 48.9 °C
-#define TEMP_WARNING_ENABLE     0         // to beep or not to beep, 1 or 0, DO NOT ACTIVITE WITHOUT CALIBRATION!
-#define TEMP_WARNING            600       // annoying fast beeps [°C * 10].  Here 60.0 °C
-#define TEMP_POWEROFF_ENABLE    0         // to poweroff or not to poweroff, 1 or 0, DO NOT ACTIVITE WITHOUT CALIBRATION!
-#define TEMP_POWEROFF           650       // overheat poweroff. (while not driving) [°C * 10]. Here 65.0 °C
-
-#define INACTIVITY_TIMEOUT      8         // minutes of not driving until poweroff. it is not very precise.
-
 
 
 // ############################### INPUT ###############################
