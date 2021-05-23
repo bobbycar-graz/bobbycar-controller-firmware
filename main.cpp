@@ -164,6 +164,7 @@ int8_t dir = 1;
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
 
 Command command;
+Feedback feedback;
 #endif
 
 #ifdef FEATURE_CAN
@@ -288,37 +289,34 @@ int main()
     HAL_ADC_Start(&hadc1);
     HAL_ADC_Start(&hadc2);
 
-    enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
+    {
+        constexpr auto doit = [](auto &motor){
+            motor.rtP = defaultP;
+            motor.rtP.b_angleMeasEna      = false;
+            motor.rtP.b_diagEna           = DIAG_ENA;
+            motor.rtP.b_fieldWeakEna      = FIELD_WEAK_ENA;
+            motor.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
+            motor.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
 
-    left.rtP = defaultP;
-    left.rtP.b_angleMeasEna      = 0;
+            motor.rtM.defaultParam        = &motor.rtP;
+            motor.rtM.dwork               = &motor.rtDW;
+            motor.rtM.inputs              = &motor.rtU;
+            motor.rtM.outputs             = &motor.rtY;
+        };
+
+        doit(left);
+        doit(right);
+
+        enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
+
 #ifdef PETERS_PLATINE
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
 #else
-    left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;
 #endif
-    left.rtP.b_diagEna           = DIAG_ENA;
-    left.rtP.b_fieldWeakEna      = FIELD_WEAK_ENA;
-    left.rtP.r_fieldWeakHi       = FIELD_WEAK_HI << 4;
-    left.rtP.r_fieldWeakLo       = FIELD_WEAK_LO << 4;
 
-    right.rtP = defaultP;
-    right.rtP.b_angleMeasEna      = 0;
-    right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
-    right.rtP.b_diagEna          = DIAG_ENA;
-    right.rtP.b_fieldWeakEna     = FIELD_WEAK_ENA;
-    right.rtP.r_fieldWeakHi      = FIELD_WEAK_HI << 4;
-    right.rtP.r_fieldWeakLo      = FIELD_WEAK_LO << 4;
-
-    left.rtM.defaultParam        = &left.rtP;
-    left.rtM.dwork               = &left.rtDW;
-    left.rtM.inputs              = &left.rtU;
-    left.rtM.outputs             = &left.rtY;
-
-    right.rtM.defaultParam       = &right.rtP;
-    right.rtM.dwork              = &right.rtDW;
-    right.rtM.inputs             = &right.rtU;
-    right.rtM.outputs            = &right.rtY;
+        right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
+    }
 
     applyDefaultSettings();
 
@@ -1492,8 +1490,6 @@ void sendFeedback()
     if (UART_DMA_CHANNEL->CNDTR != 0)
         return;
 
-    static Feedback feedback;
-
     feedback.start = Feedback::VALID_HEADER;
 
     feedback.left.angle = left.rtY.a_elecAngle;
@@ -1508,10 +1504,8 @@ void sendFeedback()
     feedback.left.current = left.rtU.i_DCLink;
     feedback.right.current = right.rtU.i_DCLink;
 
-    feedback.left.chops = left.chops;
-    feedback.right.chops = right.chops;
-    left.chops = 0;
-    right.chops = 0;
+    feedback.left.chops = left.chops.exchange(0);
+    feedback.right.chops = right.chops.exchange(0);
 
     feedback.left.hallA = left.rtU.b_hallA;
     feedback.left.hallB = left.rtU.b_hallB;
