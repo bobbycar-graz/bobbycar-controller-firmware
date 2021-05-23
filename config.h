@@ -44,13 +44,7 @@
 #define BAT_CALIB_REAL_VOLTAGE  3970      // input voltage measured by multimeter (multiplied by 100). For example 43.00 V * 100 = 4300
 #define BAT_CALIB_ADC           1492      // adc-value measured by mainboard (value nr 5 on UART debug output)
 
-#define BAT_CELLS               10        // battery number of cells. Normal Hoverboard battery: 10s
-#define BAT_LOW_LVL1_ENABLE     0         // to beep or not to beep, 1 or 0
-#define BAT_LOW_LVL2_ENABLE     1         // to beep or not to beep, 1 or 0
-#define BAT_LOW_LVL1            (360 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // gently beeps at this voltage level. [V*100/cell]. In this case 3.60 V/cell
-#define BAT_LOW_LVL2            (350 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // your battery is almost empty. Charge now! [V*100/cell]. In this case 3.50 V/cell
-#define BAT_LOW_DEAD            (337 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // undervoltage poweroff. (while not driving) [V*100/cell]. In this case 3.37 V/cell
-
+#define BAT_CELLS               12        // battery number of cells. Normal Hoverboard battery: 10s
 
 /* Board overheat detection: the sensor is inside the STM/GD chip.
  * It is very inaccurate without calibration (up to 45°C). So only enable this funcion after calibration!
