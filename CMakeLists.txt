@@ -34,6 +34,7 @@ include_directories(
     bobbycar-protocol
 )
 
+#feedcode front
 #add_definitions(-DMOTOR_TEST)
 add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
 add_definitions(-DGSCHISSENES_HALL)
@@ -47,7 +48,23 @@ add_definitions(-DPETERS_PLATINE)
 #add_definitions(-DLOG_TO_SERIAL)
 add_definitions(-DFEATURE_CAN)
 #add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
-add_definitions(-DIS_BACK)
+#add_definitions(-DIS_BACK)
+
+#feedc0de back
+##add_definitions(-DMOTOR_TEST)
+#add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
+##add_definitions(-DGSCHISSENES_HALL)
+##add_definitions(-DGSCHISSENE_PWM_FREQ)
+##add_definitions(-DFEATURE_BUTTON)
+#add_definitions(-DPETERS_PLATINE)
+##add_definitions(-DHUARN2)
+##add_definitions(-DHUARN3)
+##add_definitions(-DFEATURE_SERIAL_CONTROL)
+##add_definitions(-DFEATURE_SERIAL_FEEDBACK)
+##add_definitions(-DLOG_TO_SERIAL)
+#add_definitions(-DFEATURE_CAN)
+##add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
+#add_definitions(-DIS_BACK)
 
 add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
