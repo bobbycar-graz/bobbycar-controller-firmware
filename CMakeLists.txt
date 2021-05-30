@@ -149,6 +149,32 @@ add_custom_command(OUTPUT feedcode-back.bin COMMAND arm-none-eabi-objcopy -O bin
 add_custom_target(feedcode-back ALL SOURCES feedcode-back.hex feedcode-back.bin)
 add_custom_target(flash-feedcode-back COMMAND st-flash --reset write feedcode-back.bin 0x8000000 SOURCES feedcode-back.bin DEPENDS feedcode-back.bin)
 
+#
+# greyhash
+#
+add_executable(greyhash.elf config.h defines.h main.cpp)
+target_link_libraries(greyhash.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(greyhash.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+#    -DGSCHISSENES_HALL
+    -DGSCHISSENE_PWM_FREQ
+#    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+#    -DHUARN2
+    -DHUARN3
+    -DFEATURE_SERIAL_CONTROL
+    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+#    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+#    -DIS_BACK
+)
+add_custom_command(OUTPUT greyhash.hex COMMAND arm-none-eabi-objcopy -O ihex greyhash.elf greyhash.hex DEPENDS greyhash.elf)
+add_custom_command(OUTPUT greyhash.bin COMMAND arm-none-eabi-objcopy -O binary -S greyhash.elf greyhash.bin DEPENDS greyhash.elf)
+add_custom_target(greyhash ALL SOURCES greyhash.hex greyhash.bin)
+add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin 0x8000000 SOURCES greyhash.bin DEPENDS greyhash.bin)
+
 
 
 
