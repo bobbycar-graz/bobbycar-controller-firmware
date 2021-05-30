@@ -34,39 +34,7 @@ include_directories(
     bobbycar-protocol
 )
 
-#feedcode front
-#add_definitions(-DMOTOR_TEST)
-add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
-add_definitions(-DGSCHISSENES_HALL)
-#add_definitions(-DGSCHISSENE_PWM_FREQ)
-#add_definitions(-DFEATURE_BUTTON)
-add_definitions(-DPETERS_PLATINE)
-#add_definitions(-DHUARN2)
-#add_definitions(-DHUARN3)
-#add_definitions(-DFEATURE_SERIAL_CONTROL)
-#add_definitions(-DFEATURE_SERIAL_FEEDBACK)
-#add_definitions(-DLOG_TO_SERIAL)
-add_definitions(-DFEATURE_CAN)
-#add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
-#add_definitions(-DIS_BACK)
-
-#feedc0de back
-##add_definitions(-DMOTOR_TEST)
-#add_definitions(-DFEATURE_IGNORE_OTHER_MOTOR)
-##add_definitions(-DGSCHISSENES_HALL)
-##add_definitions(-DGSCHISSENE_PWM_FREQ)
-##add_definitions(-DFEATURE_BUTTON)
-#add_definitions(-DPETERS_PLATINE)
-##add_definitions(-DHUARN2)
-##add_definitions(-DHUARN3)
-##add_definitions(-DFEATURE_SERIAL_CONTROL)
-##add_definitions(-DFEATURE_SERIAL_FEEDBACK)
-##add_definitions(-DLOG_TO_SERIAL)
-#add_definitions(-DFEATURE_CAN)
-##add_definitions(-DCAN_LOG_UNKNOWN_ADDR)
-#add_definitions(-DIS_BACK)
-
-add_executable(firmware.elf
+add_library(stm32_hal STATIC
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c
@@ -83,43 +51,111 @@ add_executable(firmware.elf
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_can.c
+    startup_stm32f103xe.s
+    system_stm32f1xx.c
+)
 
+add_library(emanuel_foc_model STATIC
     bobbycar-foc-model/BLDC_controller.h
     bobbycar-foc-model/BLDC_controller.c
     bobbycar-foc-model/BLDC_controller_data.c
     bobbycar-foc-model/rtwtypes.h
+)
 
+add_library(bobbycar-protocol INTERFACE
     bobbycar-protocol/bobbycar-can.h
     bobbycar-protocol/bobbycar-common.h
     bobbycar-protocol/bobbycar-serial.h
-
-    startup_stm32f103xe.s
-    system_stm32f1xx.c
-
-    config.h
-    defines.h
-    main.cpp
 )
 
-add_custom_command(OUTPUT firmware.hex
-                   COMMAND arm-none-eabi-objcopy -O ihex firmware.elf firmware.hex
-                   DEPENDS firmware.elf)
 
-add_custom_command(OUTPUT firmware.bin
-                   COMMAND arm-none-eabi-objcopy -O binary -S firmware.elf firmware.bin
-                   DEPENDS firmware.elf)
 
-add_custom_target(firmware ALL
-                  SOURCES firmware.hex firmware.bin)
 
-add_custom_target(flash
-                  COMMAND st-flash --reset write firmware.bin 0x8000000
-                  SOURCES firmware.bin
-                  DEPENDS firmware.bin)
+#
+# motor test
+#
+add_executable(motortest.elf config.h defines.h main.cpp)
+target_link_libraries(motortest.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(motortest.elf PRIVATE
+    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+#    -DGSCHISSENES_HALL
+#    -DGSCHISSENE_PWM_FREQ
+#    -DFEATURE_BUTTON
+#    -DPETERS_PLATINE
+#    -DHUARN2
+#    -DHUARN3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+#    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+#    -DIS_BACK
+)
+add_custom_command(OUTPUT motortest.hex COMMAND arm-none-eabi-objcopy -O ihex motortest.elf motortest.hex DEPENDS motortest.elf)
+add_custom_command(OUTPUT motortest.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest.elf motortest.bin DEPENDS motortest.elf)
+add_custom_target(motortest ALL SOURCES motortest.hex motortest.bin)
+add_custom_target(flash-motortest COMMAND st-flash --reset write motortest.bin 0x8000000 SOURCES motortest.bin DEPENDS motortest.bin)
 
+#
+# feedc0de front
+#
+add_executable(feedcode-front.elf config.h defines.h main.cpp)
+target_link_libraries(feedcode-front.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(feedcode-front.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+    -DGSCHISSENES_HALL
+#    -DGSCHISSENE_PWM_FREQ
+#    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+#    -DHUARN2
+#    -DHUARN3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+#    -DIS_BACK
+)
+add_custom_command(OUTPUT feedcode-front.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-front.elf feedcode-front.hex DEPENDS feedcode-front.elf)
+add_custom_command(OUTPUT feedcode-front.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-front.elf feedcode-front.bin DEPENDS feedcode-front.elf)
+add_custom_target(feedcode-front ALL SOURCES feedcode-front.hex feedcode-front.bin)
+add_custom_target(flash-feedcode-front COMMAND st-flash --reset write feedcode-front.bin 0x8000000 SOURCES feedcode-front.bin DEPENDS feedcode-front.bin)
+
+#
+# feedc0de back
+#
+add_executable(feedcode-back.elf config.h defines.h main.cpp)
+target_link_libraries(feedcode-back.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(feedcode-back.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+#    -DGSCHISSENES_HALL
+#    -DGSCHISSENE_PWM_FREQ
+#    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+#    -DHUARN2
+#    -DHUARN3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+    -DIS_BACK
+)
+add_custom_command(OUTPUT feedcode-back.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-back.elf feedcode-back.hex DEPENDS feedcode-back.elf)
+add_custom_command(OUTPUT feedcode-back.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-back.elf feedcode-back.bin DEPENDS feedcode-back.elf)
+add_custom_target(feedcode-back ALL SOURCES feedcode-back.hex feedcode-back.bin)
+add_custom_target(flash-feedcode-back COMMAND st-flash --reset write feedcode-back.bin 0x8000000 SOURCES feedcode-back.bin DEPENDS feedcode-back.bin)
+
+
+
+
+
+# util targets
 add_custom_target(debug
                   COMMAND openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg)
-
 add_custom_target(unlock0
                   COMMAND openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg -c init -c "reset halt" -c "stm32f1x unlock 0")
 add_custom_target(unlock1
