@@ -15,7 +15,10 @@ git clone --recursive git@github.com:bobbycar-graz/bobbycar-controller-firmware.
 cd bobbycar-controller-firmware/
 cmake -DCMAKE_BUILD_TYPE=Release .
 make unlock0 # needed only once per board
-make flash
+make flash-motortest
+make flash-feedc0de-front
+make flash-feedc0de-back
+make flash-greyhash
 ```
 
 ## Hardware
