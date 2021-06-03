@@ -8,6 +8,7 @@ sudo pacman -Sy --noconfirm \
     arm-none-eabi-gdb \
     arm-none-eabi-newlib \
     cmake \
+    make \
     openocd \
     stlink
 
