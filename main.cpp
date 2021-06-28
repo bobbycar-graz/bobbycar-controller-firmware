@@ -109,6 +109,8 @@ CAN_HandleTypeDef     CanHandle;
 #define CANx_RX_IRQHandler             USB_LP_CAN1_RX0_IRQHandler
 #define CANx_TX_IRQn                   USB_HP_CAN1_TX_IRQn
 #define CANx_TX_IRQHandler             USB_HP_CAN1_TX_IRQHandler
+
+constexpr bool doDelayWithCanPoll = false;
 #endif
 
 #ifdef LOG_TO_SERIAL
@@ -360,23 +362,27 @@ int main()
     while (true)
     {
 #ifdef FEATURE_CAN
-        constexpr auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
-            uint32_t tickstart = HAL_GetTick();
-            uint32_t wait = Delay;
+        if constexpr (doDelayWithCanPoll)
+        {
+            constexpr auto DELAY_WITH_CAN_POLL = [](uint32_t Delay){
+                uint32_t tickstart = HAL_GetTick();
+                uint32_t wait = Delay;
 
-            /* Add a freq to guarantee minimum wait */
-            if (wait < HAL_MAX_DELAY)
-            {
-                wait += (uint32_t)(uwTickFreq);
-            }
+                /* Add a freq to guarantee minimum wait */
+                if (wait < HAL_MAX_DELAY)
+                {
+                    wait += (uint32_t)(uwTickFreq);
+                }
 
-            while ((HAL_GetTick() - tickstart) < wait)
-            {
-                applyIncomingCanMessage();
-            }
-        };
+                while ((HAL_GetTick() - tickstart) < wait)
+                {
+                    applyIncomingCanMessage();
+                }
+            };
 
-        //DELAY_WITH_CAN_POLL(5); //delay in ms
+            DELAY_WITH_CAN_POLL(5); //delay in ms
+        }
+        else
 #endif
         HAL_Delay(5); //delay in ms
 
@@ -1364,6 +1370,7 @@ void poweroff()
 }
 #endif
 
+[[maybe_unused]]
 void communicationTimeout()
 {
     applyDefaultSettings();
