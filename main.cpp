@@ -44,6 +44,8 @@ extern "C" {
 extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
 }
 
+namespace bobbycar {
+namespace controller {
 namespace {
 const P &defaultP{rtP_Left};
 
@@ -163,8 +165,8 @@ int8_t dir = 1;
 #ifdef FEATURE_SERIAL_CONTROL
 int16_t timeoutCntSerial   = 0;  // Timeout counter for Rx Serial command
 
-Command command;
-Feedback feedback;
+protocol::serial::Command command;
+protocol::serial::Feedback feedback;
 #endif
 
 #ifdef FEATURE_CAN
@@ -253,10 +255,14 @@ void updateSensors();
 
 void applyDefaultSettings();
 
-} // anonymous namespace
+} // namespace
+} // namespace controller
+} // namespace bobbycar
 
 int main()
 {
+    using namespace bobbycar::controller;
+
     HAL_Init();
     __HAL_RCC_AFIO_CLK_ENABLE();
     HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
@@ -402,6 +408,8 @@ int main()
     }
 }
 
+namespace bobbycar {
+namespace controller {
 namespace {
 void updateBuzzer()
 {
@@ -1369,8 +1377,9 @@ void communicationTimeout()
 #ifdef MOTOR_TEST
 void doMotorTest()
 {
-    timeout = 0; // proove, that the controlling code is still running
+    using namespace protocol;
 
+    timeout = 0; // proove, that the controlling code is still running
 
     left.enable = true;
     left.rtU.r_inpTgt            = pwm;
@@ -1408,6 +1417,8 @@ void doMotorTest()
 #ifdef FEATURE_SERIAL_CONTROL
 void parseCommand()
 {
+    using namespace protocol::serial;
+
     timeout = 0; // proove, that the controlling code is still running
 
     for (int i = 0; i < 1; i++)
@@ -1480,6 +1491,8 @@ void parseCommand()
 #ifdef FEATURE_SERIAL_FEEDBACK
 void sendFeedback()
 {
+    using namespace protocol::serial;
+
 #ifdef HUARN2
 #define UART_DMA_CHANNEL DMA1_Channel7
 #endif
@@ -1501,8 +1514,14 @@ void sendFeedback()
     feedback.left.error = left.rtY.z_errCode;
     feedback.right.error = right.rtY.z_errCode;
 
-    feedback.left.current = left.rtU.i_DCLink;
-    feedback.right.current = right.rtU.i_DCLink;
+    feedback.left.dcLink = left.rtU.i_DCLink;
+    feedback.right.dcLink = right.rtU.i_DCLink;
+    feedback.left.dcPhaA = left.rtY.DC_phaA;
+    feedback.right.dcPhaA = right.rtY.DC_phaA;
+    feedback.left.dcPhaB = left.rtY.DC_phaB;
+    feedback.right.dcPhaB = right.rtY.DC_phaB;
+    feedback.left.dcPhaC = left.rtY.DC_phaC;
+    feedback.right.dcPhaC = right.rtY.DC_phaC;
 
     feedback.left.chops = left.chops.exchange(0);
     feedback.right.chops = right.chops.exchange(0);
@@ -1558,7 +1577,7 @@ void applyIncomingCanMessage()
 
     switch (header.StdId)
     {
-    using namespace bobbycar::can;
+    using namespace protocol::can;
     case MotorController<isBackBoard, false>::Command::Enable:        left .enable = *((bool *)buf);                      break;
     case MotorController<isBackBoard, true> ::Command::Enable:        right.enable = *((bool *)buf);                      break;
     case MotorController<isBackBoard, false>::Command::InpTgt:        left. rtU.r_inpTgt = *((int16_t*)buf); timeoutCntLeft  = 0; break;
@@ -1662,7 +1681,7 @@ void sendCanFeedback()
 
     switch (whichToSend++)
     {
-    using namespace bobbycar::can;
+    using namespace protocol::can;
     case 0:  send(MotorController<isBackBoard, false>::Feedback::DcLink,  left. rtU.i_DCLink);      break;
     case 1:  send(MotorController<isBackBoard, true>:: Feedback::DcLink,  right.rtU.i_DCLink);      break;
     case 2:  send(MotorController<isBackBoard, false>::Feedback::Speed,   left. rtY.n_mot);         break;
@@ -1746,6 +1765,7 @@ void updateSensors()
 
 void applyDefaultSettings()
 {
+    using namespace protocol;
     constexpr auto doIt = [](auto &motor){
         motor.enable = true;
         motor.rtU.r_inpTgt            = 0;
@@ -1764,7 +1784,9 @@ void applyDefaultSettings()
     doIt(right);
 }
 
-} // anonymous namespace
+} // namespace
+} // namespace controller
+} // namespace bobbycar
 
 /******************************************************************************/
 /*            Cortex-M3 Processor Interruption and Exception Handlers         */
@@ -1898,6 +1920,7 @@ extern "C" void DMA1_Channel1_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel1_IRQn 0 */
 
     /* USER CODE END DMA1_Channel1_IRQn 0 */
+    using namespace bobbycar::controller;
     updateMotors();
     updateBuzzer();
     /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
@@ -1911,6 +1934,7 @@ extern "C" void DMA1_Channel6_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
 
     /* USER CODE END DMA1_Channel4_IRQn 0 */
+    using namespace bobbycar::controller;
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
     /* USER CODE BEGIN DMA1_Channel4_IRQn 1 */
 
@@ -1925,6 +1949,7 @@ extern "C" void DMA1_Channel7_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
 
     /* USER CODE END DMA1_Channel5_IRQn 0 */
+    using namespace bobbycar::controller;
     HAL_DMA_IRQHandler(&hdma_usart2_tx);
     /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
 
@@ -1941,6 +1966,7 @@ extern "C" void DMA1_Channel2_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel2_IRQn 0 */
 
     /* USER CODE END DMA1_Channel2_IRQn 0 */
+    using namespace bobbycar::controller;
     HAL_DMA_IRQHandler(&hdma_usart3_tx);
     /* USER CODE BEGIN DMA1_Channel2_IRQn 1 */
 
@@ -1955,6 +1981,7 @@ extern "C" void DMA1_Channel3_IRQHandler()
     /* USER CODE BEGIN DMA1_Channel3_IRQn 0 */
 
     /* USER CODE END DMA1_Channel3_IRQn 0 */
+    using namespace bobbycar::controller;
     HAL_DMA_IRQHandler(&hdma_usart3_rx);
     /* USER CODE BEGIN DMA1_Channel3_IRQn 1 */
 
@@ -1965,11 +1992,13 @@ extern "C" void DMA1_Channel3_IRQHandler()
 #ifdef FEATURE_CAN
 extern "C" void CANx_RX_IRQHandler(void)
 {
+    using namespace bobbycar::controller;
     HAL_CAN_IRQHandler(&CanHandle);
 }
 
 extern "C" void CANx_TX_IRQHandler(void)
 {
+    using namespace bobbycar::controller;
     HAL_CAN_IRQHandler(&CanHandle);
 }
 #endif
