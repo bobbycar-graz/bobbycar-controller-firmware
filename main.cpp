@@ -245,6 +245,10 @@ void applyIncomingCanMessage();
 void sendCanFeedback();
 #endif
 
+#ifdef FEATURE_ANALOG_INPUT
+void handleAnalogInput();
+#endif
+
 #ifdef FEATURE_BUTTON
 void handleButton();
 #endif
@@ -392,6 +396,10 @@ int main()
         parseCanCommand();
 
         sendCanFeedback();
+#endif
+
+#ifdef FEATURE_ANALOG_INPUT
+        handleAnalogInput();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -805,6 +813,8 @@ void CAN_Init()
     else
     {
         myPrintf("HAL_CAN_Init() failed with %i", result);
+        buzzer.freq = 20;
+        buzzer.pattern = 5;
         while (true);
     }
 
@@ -833,6 +843,8 @@ void CAN_Init()
         else
         {
             myPrintf("HAL_CAN_ConfigFilter() failed with %i", result);
+            buzzer.freq = 20;
+            buzzer.pattern = 5;
             while (true);
         }
     }
@@ -842,6 +854,8 @@ void CAN_Init()
     else
     {
         myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_RX_FIFO0_MSG_PENDING_CB_ID failed with %i", result);
+        buzzer.freq = 20;
+        buzzer.pattern = 5;
         while (true);
     }
 
@@ -852,6 +866,8 @@ void CAN_Init()
         else
         {
             myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX0_COMPLETE_CB_ID failed with %i", result);
+            buzzer.freq = 20;
+            buzzer.pattern = 5;
             while (true);
         }
 
@@ -860,6 +876,8 @@ void CAN_Init()
         else
         {
             myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX1_COMPLETE_CB_ID failed with %i", result);
+            buzzer.freq = 20;
+            buzzer.pattern = 5;
             while (true);
         }
 
@@ -868,6 +886,8 @@ void CAN_Init()
         else
         {
             myPrintf("HAL_CAN_RegisterCallback() HAL_CAN_TX_MAILBOX2_COMPLETE_CB_ID failed with %i", result);
+            buzzer.freq = 20;
+            buzzer.pattern = 5;
             while (true);
         }
     }
@@ -878,6 +898,8 @@ void CAN_Init()
     else
     {
         myPrintf("HAL_CAN_Start() failed with %i", result);
+        buzzer.freq = 20;
+        buzzer.pattern = 5;
         while (true);
     }
 
@@ -887,6 +909,8 @@ void CAN_Init()
     else
     {
         myPrintf("HAL_CAN_ActivateNotification() CAN_IT_RX_FIFO0_MSG_PENDING failed with %i", result);
+        buzzer.freq = 20;
+        buzzer.pattern = 5;
         while (true);
     }
 
@@ -898,6 +922,8 @@ void CAN_Init()
         else
         {
             myPrintf("HAL_CAN_ActivateNotification() CAN_IT_TX_MAILBOX_EMPTY failed with %i", result);
+            buzzer.freq = 20;
+            buzzer.pattern = 5;
             while (true);
         }
     }
@@ -1687,6 +1713,33 @@ void sendCanFeedback()
     case 21: send(MotorController<isBackBoard, true>:: Feedback::Temp,    board_temp_deg_c);  whichToSend = 0; break;
     default: myPrintf("unreachable");
     }
+}
+#endif
+
+#ifdef FEATURE_ANALOG_INPUT
+void handleAnalogInput()
+{
+    timeout = 0; // proove, that the controlling code is still running
+
+    left.enable = true;
+    left.rtU.r_inpTgt            = adc_buffer.l_rx2 / 2;
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Speed);
+    left.rtP.i_max               = (10 * A2BIT_CONV) << 4;
+    left.iDcMax                  = 12;
+    left.rtP.n_max               = 1000 << 4;
+    left.rtP.id_fieldWeakMax     = (0 * A2BIT_CONV) << 4;
+    left.rtP.a_phaAdvMax         = 40 << 4;
+
+    right.enable = true;
+    right.rtU.r_inpTgt           = adc_buffer.l_tx2 / 2;
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Speed);
+    right.rtP.i_max              = (10 * A2BIT_CONV) << 4;
+    right.iDcMax                 = 12;
+    right.rtP.n_max              = 1000 << 4;
+    right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
+    right.rtP.a_phaAdvMax        = 40 << 4;
 }
 #endif
 

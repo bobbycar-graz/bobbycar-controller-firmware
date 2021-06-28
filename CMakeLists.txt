@@ -176,6 +176,38 @@ add_custom_target(greyhash ALL SOURCES greyhash.hex greyhash.bin)
 add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin 0x8000000 SOURCES greyhash.bin DEPENDS greyhash.bin)
 
 
+#
+# dumbcar
+#
+add_executable(dumbcar.elf config.h defines.h main.cpp)
+target_link_libraries(dumbcar.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(dumbcar.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+#    -DGSCHISSENES_HALL
+#    -DGSCHISSENE_PWM_FREQ
+#    -DFEATURE_BUTTON
+#    -DPETERS_PLATINE
+#    -DHUARN2
+#    -DHUARN3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+#    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+#    -DIS_BACK
+    -DFEATURE_ANALOG_INPUT
+    -DGAS_MIN=100
+    -DGAS_MAX=1200
+    -DBREMS_MIN=100
+    -DBREMS_MAX=1200
+)
+add_custom_command(OUTPUT dumbcar.hex COMMAND arm-none-eabi-objcopy -O ihex dumbcar.elf dumbcar.hex DEPENDS dumbcar.elf)
+add_custom_command(OUTPUT dumbcar.bin COMMAND arm-none-eabi-objcopy -O binary -S dumbcar.elf dumbcar.bin DEPENDS dumbcar.elf)
+add_custom_target(dumbcar ALL SOURCES dumbcar.hex dumbcar.bin)
+add_custom_target(flash-dumbcar COMMAND st-flash --reset write dumbcar.bin 0x8000000 SOURCES dumbcar.bin DEPENDS dumbcar.bin)
+
+
 
 
 
