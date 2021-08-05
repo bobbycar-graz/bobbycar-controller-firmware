@@ -516,7 +516,7 @@ void updateMotors()
     /* Make sure to stop BOTH motors in case of an error */
 
     constexpr bool ignoreOtherMotor =
-#ifdef FEATURE_IGNORE_OTHER_MOTOR
+#ifndef FEATURE_IGNORE_OTHER_MOTOR
         false
 #else
         true
@@ -1390,8 +1390,8 @@ void doMotorTest()
 
     left.enable = true;
     left.rtU.r_inpTgt            = pwm;
-    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
-    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Speed);
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::Sinusoidal);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Voltage);
     left.rtP.i_max               = (2 * A2BIT_CONV) << 4;
     left.iDcMax                  = 4;
     left.rtP.n_max               = 1000 << 4;
@@ -1399,9 +1399,9 @@ void doMotorTest()
     left.rtP.a_phaAdvMax         = 40 << 4;
 
     right.enable = true;
-    right.rtU.r_inpTgt           = pwm;
-    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
-    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Speed);
+    right.rtU.r_inpTgt           = -pwm;
+    right.rtP.z_ctrlTypSel       = uint8_t(ControlType::Sinusoidal);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Voltage);
     right.rtP.i_max              = (2 * A2BIT_CONV) << 4;
     right.iDcMax                 = 4;
     right.rtP.n_max              = 1000 << 4;
@@ -1417,6 +1417,24 @@ void doMotorTest()
     } else if (pwm < -pwmMax) {
         pwm = -pwmMax;
         dir = 1;
+    }
+
+    if(left.rtY.z_errCode != 0 || right.rtY.z_errCode != 0) {
+        if(left.rtY.z_errCode == 0 && right.rtY.z_errCode != 0) { //rechts
+            buzzer.freq = 1;
+            buzzer.pattern = 1;
+        }
+        if(right.rtY.z_errCode == 0 && left.rtY.z_errCode != 0) { //links
+            buzzer.freq = 3;
+            buzzer.pattern = 3;
+        }
+        if(right.rtY.z_errCode != 0 && left.rtY.z_errCode != 0) { //beide
+            buzzer.freq = 5;
+            buzzer.pattern = 5;
+        }
+    } else {
+        buzzer.freq = 0;
+        buzzer.pattern = 0;
     }
 }
 #endif
