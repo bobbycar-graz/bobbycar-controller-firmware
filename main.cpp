@@ -1440,9 +1440,9 @@ void parseCommand()
         left.iDcMax = command.left.iDcMax;
 
         left.rtP.z_ctrlTypSel    = uint8_t(command.left.ctrlTyp);
-        left.rtP.i_max           = (command.left.iMotMax * A2BIT_CONV) << 4;
+        left.rtP.i_max           = (int16_t(command.left.iMotMax) * A2BIT_CONV) << 4;
         left.rtP.n_max           = command.left.nMotMax << 4;
-        left.rtP.id_fieldWeakMax = (command.left.fieldWeakMax * A2BIT_CONV) << 4;
+        left.rtP.id_fieldWeakMax = (int16_t(command.left.fieldWeakMax) * A2BIT_CONV) << 4;
         left.rtP.a_phaAdvMax     = command.left.phaseAdvMax << 4;
         left.rtU.z_ctrlModReq    = uint8_t(command.left.ctrlMod);
         left.rtU.r_inpTgt        = command.left.pwm;
@@ -1450,9 +1450,9 @@ void parseCommand()
         right.iDcMax = command.right.iDcMax;
 
         right.rtP.z_ctrlTypSel    = uint8_t(command.right.ctrlTyp);
-        right.rtP.i_max           = (command.right.iMotMax * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        right.rtP.i_max           = (int16_t(command.right.iMotMax) * A2BIT_CONV) << 4;        // fixdt(1,16,4)
         right.rtP.n_max           = command.right.nMotMax << 4;                       // fixdt(1,16,4)
-        right.rtP.id_fieldWeakMax = (command.right.fieldWeakMax * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        right.rtP.id_fieldWeakMax = (int16_t(command.right.fieldWeakMax) * A2BIT_CONV) << 4;   // fixdt(1,16,4)
         right.rtP.a_phaAdvMax     = command.right.phaseAdvMax << 4;                   // fixdt(1,16,4)
         right.rtU.z_ctrlModReq    = uint8_t(command.right.ctrlMod);
         right.rtU.r_inpTgt        = command.right.pwm;
@@ -1593,14 +1593,14 @@ void applyIncomingCanMessage()
     case MotorController<isBackBoard, true> ::Command::CtrlTyp:       right.rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, false>::Command::CtrlMod:       left .rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, true> ::Command::CtrlMod:       right.rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
-    case MotorController<isBackBoard, false>::Command::IMotMax:       left .rtP.i_max           = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorController<isBackBoard, true> ::Command::IMotMax:       right.rtP.i_max           = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::IMotMax:       left .rtP.i_max           = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::IMotMax:       right.rtP.i_max           = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, false>::Command::IDcMax:        left .iDcMax              = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, true> ::Command::IDcMax:        right.iDcMax              = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, false>::Command::NMotMax:       left .rtP.n_max           = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, true> ::Command::NMotMax:       right.rtP.n_max           = *((uint16_t*)buf) << 4; break;
-    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
-    case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (*((uint8_t*)buf) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left .rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, true> ::Command::PhaseAdvMax:   right.rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, false>::Command::CruiseCtrlEna: left .rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
