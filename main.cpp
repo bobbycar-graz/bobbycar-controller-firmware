@@ -53,19 +53,19 @@ TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
-#ifdef HUARN2
+#ifdef HUART2
 UART_HandleTypeDef huart2;
 #endif
-#ifdef HUARN3
+#ifdef HUART3
 UART_HandleTypeDef huart3;
 #endif
 
-#ifdef HUARN2
+#ifdef HUART2
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 #endif
 
-#ifdef HUARN3
+#ifdef HUART3
 DMA_HandleTypeDef hdma_usart3_rx;
 DMA_HandleTypeDef hdma_usart3_tx;
 #endif
@@ -129,10 +129,10 @@ template<std::size_t formatLength, typename ... Targs>
 void myPrintf(const char (&format)[formatLength], Targs ... args)
 {
 #ifdef LOG_TO_SERIAL
-#ifdef HUARN2
+#ifdef HUART2
 #define UART_DMA_CHANNEL DMA1_Channel7
 #endif
-#ifdef HUARN3
+#ifdef HUART3
 #define UART_DMA_CHANNEL DMA1_Channel2
 #endif
 
@@ -206,11 +206,11 @@ struct {
 
 void SystemClock_Config();
 
-#ifdef HUARN2
+#ifdef HUART2
 void UART2_Init();
 #endif
 
-#ifdef HUARN3
+#ifdef HUART3
 void UART3_Init();
 #endif
 
@@ -339,10 +339,10 @@ int main()
     }
     buzzer.freq = 0;
 
-#ifdef HUARN2
+#ifdef HUART2
     UART2_Init();
 #endif
-#ifdef HUARN3
+#ifdef HUART3
     UART3_Init();
 #endif
 
@@ -351,10 +351,10 @@ int main()
 #endif
 
 #ifdef FEATURE_SERIAL_CONTROL
-#ifdef HUARN2
+#ifdef HUART2
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
-#ifdef HUARN3
+#ifdef HUART3
     HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
 #endif
 #endif
@@ -517,9 +517,9 @@ void updateMotors()
 
     constexpr bool ignoreOtherMotor =
 #ifdef FEATURE_IGNORE_OTHER_MOTOR
-        false
-#else
         true
+#else
+        false
 #endif
     ;
 
@@ -528,9 +528,15 @@ void updateMotors()
 
     // ========================= LEFT MOTOR ============================
     // Get hall sensors values
+#ifdef FEATURE_INVERT_HALL
+    bool hall_ul = (LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN);
+    bool hall_vl = (LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN);
+    bool hall_wl = (LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN);
+#else
     bool hall_ul = !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN);
     bool hall_vl = !(LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN);
     bool hall_wl = !(LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN);
+#endif
 
     /* Set motor inputs here */
     left.rtU.b_motEna     = enableLFin;
@@ -558,9 +564,16 @@ void updateMotors()
 
     // ========================= RIGHT MOTOR ===========================
     // Get hall sensors values
+#ifdef FEATURE_INVERT_HALL
+    bool hall_ur = (RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
+    bool hall_vr = (RIGHT_HALL_V_PORT->IDR & RIGHT_HALL_V_PIN);
+    bool hall_wr = (RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
+#else
     bool hall_ur = !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
     bool hall_vr = !(RIGHT_HALL_V_PORT->IDR & RIGHT_HALL_V_PIN);
     bool hall_wr = !(RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
+#endif
+
 
     /* Set motor inputs here */
     right.rtU.b_motEna      = enableRFin;
@@ -636,7 +649,7 @@ void SystemClock_Config()
     HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
-#ifdef HUARN2
+#ifdef HUART2
 void UART2_Init()
 {
     /* The code below is commented out - otwerwise Serial Receive does not work */
@@ -710,7 +723,7 @@ void UART2_Init()
 }
 #endif
 
-#ifdef HUARN3
+#ifdef HUART3
 void UART3_Init()
 {
     /* The code below is commented out - otwerwise Serial Receive does not work */
@@ -1386,24 +1399,24 @@ void doMotorTest()
 {
     using namespace protocol;
 
-    timeout = 0; // proove, that the controlling code is still running
+    timeout = 0; // prove, that the controlling code is still running
 
     left.enable = true;
     left.rtU.r_inpTgt            = pwm;
     left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
-    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Speed);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Torque);
     left.rtP.i_max               = (2 * A2BIT_CONV) << 4;
-    left.iDcMax                  = 4;
+    left.iDcMax                  = 8;
     left.rtP.n_max               = 1000 << 4;
     left.rtP.id_fieldWeakMax     = (0 * A2BIT_CONV) << 4;
     left.rtP.a_phaAdvMax         = 40 << 4;
 
     right.enable = true;
-    right.rtU.r_inpTgt           = pwm;
+    right.rtU.r_inpTgt           = -pwm;
     right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
-    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Speed);
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Torque);
     right.rtP.i_max              = (2 * A2BIT_CONV) << 4;
-    right.iDcMax                 = 4;
+    right.iDcMax                 = 8;
     right.rtP.n_max              = 1000 << 4;
     right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
     right.rtP.a_phaAdvMax        = 40 << 4;
@@ -1417,6 +1430,24 @@ void doMotorTest()
     } else if (pwm < -pwmMax) {
         pwm = -pwmMax;
         dir = 1;
+    }
+
+    if(left.rtY.z_errCode != 0 || right.rtY.z_errCode != 0) {
+        if(left.rtY.z_errCode == 0 && right.rtY.z_errCode != 0) { //rechts
+            buzzer.freq = 1;
+            buzzer.pattern = 1;
+        }
+        if(right.rtY.z_errCode == 0 && left.rtY.z_errCode != 0) { //links
+            buzzer.freq = 3;
+            buzzer.pattern = 3;
+        }
+        if(right.rtY.z_errCode != 0 && left.rtY.z_errCode != 0) { //beide
+            buzzer.freq = 5;
+            buzzer.pattern = 5;
+        }
+    } else {
+        buzzer.freq = 0;
+        buzzer.pattern = 0;
     }
 }
 #endif
@@ -1482,11 +1513,11 @@ void parseCommand()
         // Check periodically the received Start Frame. Try to re-sync by reseting the DMA
         if (main_loop_counter % 25 == 0)
         {
-#ifdef HUARN2
+#ifdef HUART2
             HAL_UART_DMAStop(&huart2);
             HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
 #endif
-#ifdef HUARN3
+#ifdef HUART3
             HAL_UART_DMAStop(&huart3);
             HAL_UART_Receive_DMA(&huart3, (uint8_t *)&command, sizeof(command));
 #endif
@@ -1500,10 +1531,10 @@ void sendFeedback()
 {
     using namespace protocol::serial;
 
-#ifdef HUARN2
+#ifdef HUART2
 #define UART_DMA_CHANNEL DMA1_Channel7
 #endif
-#ifdef HUARN3
+#ifdef HUART3
 #define UART_DMA_CHANNEL DMA1_Channel2
 #endif
 
@@ -1935,7 +1966,7 @@ extern "C" void DMA1_Channel1_IRQHandler()
     /* USER CODE END DMA1_Channel1_IRQn 1 */
 }
 
-#ifdef HUARN2
+#ifdef HUART2
 extern "C" void DMA1_Channel6_IRQHandler()
 {
     /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
@@ -1964,7 +1995,7 @@ extern "C" void DMA1_Channel7_IRQHandler()
 }
 #endif
 
-#ifdef HUARN3
+#ifdef HUART3
 /**
 * @brief This function handles DMA1 channel2 global interrupt.
 */

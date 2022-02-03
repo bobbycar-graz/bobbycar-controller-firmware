@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef GSCHISSENE_PWM_FREQ
+#ifdef PWM_FREQ_12KHZ
 #define PWM_FREQ            12000     // PWM frequency in Hz
 #else
 #define PWM_FREQ            16000     // PWM frequency in Hz
