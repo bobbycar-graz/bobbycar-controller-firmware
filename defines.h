@@ -23,7 +23,20 @@
 #include "stm32f1xx_hal.h"
 
 #ifdef PETERS_PLATINE
-#ifdef HALL_BCA
+
+#ifdef HALL_CAB
+    #define LEFT_HALL_U_PIN GPIO_PIN_11
+    #define LEFT_HALL_V_PIN GPIO_PIN_12
+    #define LEFT_HALL_W_PIN GPIO_PIN_10
+#elif HALL_CBA
+    #define LEFT_HALL_U_PIN GPIO_PIN_11
+    #define LEFT_HALL_V_PIN GPIO_PIN_10
+    #define LEFT_HALL_W_PIN GPIO_PIN_12
+#elif HALL_BAC
+    #define LEFT_HALL_U_PIN GPIO_PIN_10
+    #define LEFT_HALL_V_PIN GPIO_PIN_12
+    #define LEFT_HALL_W_PIN GPIO_PIN_11
+#elif HALL_BCA
     #define LEFT_HALL_U_PIN GPIO_PIN_10
     #define LEFT_HALL_V_PIN GPIO_PIN_11
     #define LEFT_HALL_W_PIN GPIO_PIN_12
@@ -41,7 +54,19 @@
     #define LEFT_HALL_V_PORT GPIOC
     #define LEFT_HALL_W_PORT GPIOC
 
-#ifdef HALL_BCA
+#ifdef HALL_CAB
+    #define RIGHT_HALL_U_PIN GPIO_PIN_6
+    #define RIGHT_HALL_V_PIN GPIO_PIN_5
+    #define RIGHT_HALL_W_PIN GPIO_PIN_7
+#elif HALL_CBA
+    #define RIGHT_HALL_U_PIN GPIO_PIN_6
+    #define RIGHT_HALL_V_PIN GPIO_PIN_7
+    #define RIGHT_HALL_W_PIN GPIO_PIN_5
+#elif HALL_BAC
+    #define RIGHT_HALL_U_PIN GPIO_PIN_7
+    #define RIGHT_HALL_V_PIN GPIO_PIN_5
+    #define RIGHT_HALL_W_PIN GPIO_PIN_6
+#elif HALL_BCA
     #define RIGHT_HALL_U_PIN GPIO_PIN_7
     #define RIGHT_HALL_V_PIN GPIO_PIN_6
     #define RIGHT_HALL_W_PIN GPIO_PIN_5
