@@ -63,9 +63,6 @@ add_library(emanuel_foc_model STATIC
 )
 
 add_library(bobbycar-protocol INTERFACE
-    bobbycar-protocol/bobbycar-can.h
-    bobbycar-protocol/bobbycar-common.h
-    bobbycar-protocol/bobbycar-serial.h
 )
 
 
@@ -79,12 +76,12 @@ target_link_libraries(motortest.elf stm32_hal emanuel_foc_model bobbycar-protoco
 target_compile_options(motortest.elf PRIVATE
     -DMOTOR_TEST
     -DFEATURE_IGNORE_OTHER_MOTOR
-#    -DGSCHISSENES_HALL
-#    -DGSCHISSENE_PWM_FREQ
+#    -DHALL_BCA
+#    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
 #    -DPETERS_PLATINE
-#    -DHUARN2
-#    -DHUARN3
+#    -DHUART2
+#    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
 #    -DFEATURE_SERIAL_FEEDBACK
 #    -DLOG_TO_SERIAL
@@ -98,6 +95,34 @@ add_custom_target(motortest ALL SOURCES motortest.hex motortest.bin)
 add_custom_target(flash-motortest COMMAND st-flash --reset write motortest.bin 0x8000000 SOURCES motortest.bin DEPENDS motortest.bin)
 
 #
+# motor test peter
+#
+add_executable(motortest_peter.elf config.h defines.h main.cpp)
+target_link_libraries(motortest_peter.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(motortest_peter.elf PRIVATE
+    #-DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+    -DHALL_ABC
+    #    -DPWM_FREQ_12KHZ
+    #    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+    #     -DFEATURE_INVERT_HALL
+    #    -DHUART2
+    #    -DHUART3
+    #    -DFEATURE_SERIAL_CONTROL
+    #    -DFEATURE_SERIAL_FEEDBACK
+    #    -DLOG_TO_SERIAL
+        -DFEATURE_CAN
+    #    -DCAN_LOG_UNKNOWN_ADDR
+        -DIS_BACK
+)
+add_custom_command(OUTPUT motortest_peter.hex COMMAND arm-none-eabi-objcopy -O ihex motortest_peter.elf motortest_peter.hex DEPENDS motortest_peter.elf)
+add_custom_command(OUTPUT motortest_peter.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest_peter.elf motortest_peter.bin DEPENDS motortest_peter.elf)
+add_custom_target(motortest_peter ALL SOURCES motortest_peter.hex motortest_peter.bin)
+add_custom_target(flash-motortest_peter COMMAND st-flash --reset write motortest_peter.bin 0x8000000 SOURCES motortest_peter.bin DEPENDS motortest_peter.bin)
+
+
+#
 # feedc0de front
 #
 add_executable(feedcode-front.elf config.h defines.h main.cpp)
@@ -105,12 +130,12 @@ target_link_libraries(feedcode-front.elf stm32_hal emanuel_foc_model bobbycar-pr
 target_compile_options(feedcode-front.elf PRIVATE
 #    -DMOTOR_TEST
     -DFEATURE_IGNORE_OTHER_MOTOR
-    -DGSCHISSENES_HALL
-#    -DGSCHISSENE_PWM_FREQ
+    -DHALL_BCA
+#    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
-#    -DHUARN2
-#    -DHUARN3
+#    -DHUART2
+#    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
 #    -DFEATURE_SERIAL_FEEDBACK
 #    -DLOG_TO_SERIAL
@@ -131,12 +156,12 @@ target_link_libraries(feedcode-back.elf stm32_hal emanuel_foc_model bobbycar-pro
 target_compile_options(feedcode-back.elf PRIVATE
 #    -DMOTOR_TEST
     -DFEATURE_IGNORE_OTHER_MOTOR
-#    -DGSCHISSENES_HALL
-#    -DGSCHISSENE_PWM_FREQ
+#    -DHALL_BCA
+#    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
-#    -DHUARN2
-#    -DHUARN3
+#    -DHUART2
+#    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
 #    -DFEATURE_SERIAL_FEEDBACK
 #    -DLOG_TO_SERIAL
@@ -157,12 +182,12 @@ target_link_libraries(greyhash.elf stm32_hal emanuel_foc_model bobbycar-protocol
 target_compile_options(greyhash.elf PRIVATE
 #    -DMOTOR_TEST
     -DFEATURE_IGNORE_OTHER_MOTOR
-#    -DGSCHISSENES_HALL
-    -DGSCHISSENE_PWM_FREQ
+#    -DHALL_BCA
+    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
-#    -DHUARN2
-    -DHUARN3
+#    -DHUART2
+    -DHUART3
     -DFEATURE_SERIAL_CONTROL
     -DFEATURE_SERIAL_FEEDBACK
 #    -DLOG_TO_SERIAL
