@@ -27,6 +27,17 @@ jobs:
           sudo apt install -y binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi cmake make
           
       - name: Build
+        id: build
+        continue-on-error: true
         run: |
           cmake -DCMAKE_BUILD_TYPE=Release .
           make -j$(nproc) ${{ matrix.config }}
+
+    # github artifacts
+      - name: Upload logs if failed
+        if: ${{ steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@v2.2.4
+        with:
+          path: |
+            ./CMakeFiles/CMakeOutput.log
+            ./CMakeFiles/CMakeError.log
