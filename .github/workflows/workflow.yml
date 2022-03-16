@@ -21,7 +21,7 @@ jobs:
       - name: Install make
         run: |
           sudo apt update -y
-          sudo apt install -y binutils-arm-none-eabi gcc-arm-none-eabi newlib-arm-none-eabi cmake make
+          sudo apt install -y binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi cmake make
           
       - name: Build
         run: |
