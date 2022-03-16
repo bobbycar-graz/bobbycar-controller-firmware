@@ -13,8 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        config: [motortest, feedc0de-front, feedc0de-back, greyhash]
+        config: [motortest, motortest_peter, feedcode-front, feedcode-back, greyhash]
     steps:
       - uses: actions/checkout@v2
         with:
