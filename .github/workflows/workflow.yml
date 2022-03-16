@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+  release:
+    types:
+      - created
+#  pull_request:
+#    types: [opened, synchronize, reopened]
+
+# checkout, install make and try to build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    matrix:
+      config: [motortest, feedc0de-front, feedc0de-back, greyhash]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install make
+        run: |
+          apt update -y
+          apt install -y binutils-arm-none-eabi gcc-arm-none-eabi newlib-arm-none-eabi cmake make
+          
+      - name: Build
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release .
+          make -j$(nproc) ${{ matrix.config }}
