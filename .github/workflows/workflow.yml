@@ -17,6 +17,8 @@ jobs:
         config: [motortest, feedc0de-front, feedc0de-back, greyhash]
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'true'
 
       - name: Install make
         run: |
