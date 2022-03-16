@@ -12,8 +12,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    matrix:
-      config: [motortest, feedc0de-front, feedc0de-back, greyhash]
+    strategy:
+      matrix:
+        config: [motortest, feedc0de-front, feedc0de-back, greyhash]
     steps:
       - uses: actions/checkout@v2
 
