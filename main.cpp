@@ -1616,10 +1616,10 @@ void applyIncomingCanMessage()
     switch (header.StdId)
     {
     using namespace protocol::can;
-    case MotorController<isBackBoard, false>::Command::Enable:        left .enable = *((bool *)buf);                      break;
-    case MotorController<isBackBoard, true> ::Command::Enable:        right.enable = *((bool *)buf);                      break;
-    case MotorController<isBackBoard, false>::Command::InpTgt:        left. rtU.r_inpTgt = *((int16_t*)buf); timeoutCntLeft  = 0; break;
-    case MotorController<isBackBoard, true> ::Command::InpTgt:        right.rtU.r_inpTgt = *((int16_t*)buf); timeoutCntRight = 0; break;
+    case MotorController<isBackBoard, false>::Command::Enable:        left .enable              = *((bool *)buf);         break;
+    case MotorController<isBackBoard, true> ::Command::Enable:        right.enable              = *((bool *)buf);         break;
+    case MotorController<isBackBoard, false>::Command::InpTgt:        left. rtU.r_inpTgt        = *((int16_t*)buf); timeoutCntLeft  = 0; break;
+    case MotorController<isBackBoard, true> ::Command::InpTgt:        right.rtU.r_inpTgt        = *((int16_t*)buf); timeoutCntRight = 0; break;
     case MotorController<isBackBoard, false>::Command::CtrlTyp:       left .rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, true> ::Command::CtrlTyp:       right.rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, false>::Command::CtrlMod:       left .rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
@@ -1689,61 +1689,67 @@ void applyIncomingCanMessage()
     }
 }
 
+template<typename T>
+void send(uint32_t addr, T value)
+{
+    CAN_TxHeaderTypeDef header;
+    header.StdId = addr;
+    header.ExtId = 0x01;
+    header.RTR = CAN_RTR_DATA;
+    header.IDE = CAN_ID_STD;
+    header.DLC = sizeof(value);
+    header.TransmitGlobalTime = DISABLE;
+
+    uint8_t buf[8] {0};
+    std::memcpy(buf, &value, sizeof(value));
+
+    static uint32_t TxMailbox;
+    if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
+    {
+        myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+        //while (true);
+    }
+}
+
 void sendCanFeedback()
 {
     const auto free = HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle);
     if (!free)
         return;
 
-    constexpr auto send = [](uint32_t addr, auto value){
-        CAN_TxHeaderTypeDef header;
-        header.StdId = addr;
-        header.ExtId = 0x01;
-        header.RTR = CAN_RTR_DATA;
-        header.IDE = CAN_ID_STD;
-        header.DLC = sizeof(value);
-        header.TransmitGlobalTime = DISABLE;
-
-        uint8_t buf[8] {0};
-        std::memcpy(buf, &value, sizeof(value));
-
-        static uint32_t TxMailbox;
-        if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK)
-        {
-            myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
-            //while (true);
-        }
-    };
-
     static uint8_t whichToSend{};
 
-    switch (whichToSend++)
-    {
     using namespace protocol::can;
-    case 0:  send(MotorController<isBackBoard, false>::Feedback::DcLink,  left. rtU.i_DCLink);      break;
-    case 1:  send(MotorController<isBackBoard, true>:: Feedback::DcLink,  right.rtU.i_DCLink);      break;
-    case 2:  send(MotorController<isBackBoard, false>::Feedback::Speed,   left. rtY.n_mot);         break;
-    case 3:  send(MotorController<isBackBoard, true>:: Feedback::Speed,   right.rtY.n_mot);         break;
-    case 4:  send(MotorController<isBackBoard, false>::Feedback::Error,   left. rtY.z_errCode);     break;
-    case 5:  send(MotorController<isBackBoard, true>:: Feedback::Error,   right.rtY.z_errCode);     break;
-    case 6:  send(MotorController<isBackBoard, false>::Feedback::Angle,   left. rtY.a_elecAngle);   break;
-    case 7:  send(MotorController<isBackBoard, true>:: Feedback::Angle,   right.rtY.a_elecAngle);   break;
-    case 8:  send(MotorController<isBackBoard, false>::Feedback::DcPhaA,  left. rtY.DC_phaA);       break;
-    case 9:  send(MotorController<isBackBoard, true>:: Feedback::DcPhaA,  right.rtY.DC_phaA);       break;
-    case 10: send(MotorController<isBackBoard, false>::Feedback::DcPhaB,  left. rtY.DC_phaB);       break;
-    case 11: send(MotorController<isBackBoard, true>:: Feedback::DcPhaB,  right.rtY.DC_phaB);       break;
-    case 12: send(MotorController<isBackBoard, false>::Feedback::DcPhaC,  left. rtY.DC_phaC);       break;
-    case 13: send(MotorController<isBackBoard, true>:: Feedback::DcPhaC,  right.rtY.DC_phaC);       break;
-    case 14: send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops.exchange(0)); break;
-    case 15: send(MotorController<isBackBoard, true>:: Feedback::Chops,   right.chops.exchange(0)); break;
-    case 16: send(MotorController<isBackBoard, false>::Feedback::Hall,    left.hallBits());         break;
-    case 17: send(MotorController<isBackBoard, true>:: Feedback::Hall,    right.hallBits());        break;
-    case 18: send(MotorController<isBackBoard, false>::Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case 19: send(MotorController<isBackBoard, true>:: Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); break;
-    case 20: send(MotorController<isBackBoard, false>::Feedback::Temp,    board_temp_deg_c);        break;
-    case 21: send(MotorController<isBackBoard, true>:: Feedback::Temp,    board_temp_deg_c);  whichToSend = 0; break;
-    default: myPrintf("unreachable");
-    }
+    constexpr void(*arr[])() = {
+        [](){ send(MotorController<isBackBoard, false>::Feedback::DcLink,  left. rtU.i_DCLink);      },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::DcLink,  right.rtU.i_DCLink);      },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Speed,   left. rtY.n_mot);         },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Speed,   right.rtY.n_mot);         },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Error,   left. rtY.z_errCode);     },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Error,   right.rtY.z_errCode);     },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Angle,   left. rtY.a_elecAngle);   },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Angle,   right.rtY.a_elecAngle);   },
+//        [](){ send(MotorController<isBackBoard, false>::Feedback::DcPhaA,  left. rtY.DC_phaA);       },
+//        [](){ send(MotorController<isBackBoard, true>:: Feedback::DcPhaA,  right.rtY.DC_phaA);       },
+//        [](){ send(MotorController<isBackBoard, false>::Feedback::DcPhaB,  left. rtY.DC_phaB);       },
+//        [](){ send(MotorController<isBackBoard, true>:: Feedback::DcPhaB,  right.rtY.DC_phaB);       },
+//        [](){ send(MotorController<isBackBoard, false>::Feedback::DcPhaC,  left. rtY.DC_phaC);       },
+//        [](){ send(MotorController<isBackBoard, true>:: Feedback::DcPhaC,  right.rtY.DC_phaC);       },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Chops,   left. chops.exchange(0)); },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Chops,   right.chops.exchange(0)); },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Hall,    left.hallBits());         },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Hall,    right.hallBits());        },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Voltage, batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC); },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Temp,    board_temp_deg_c);        },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Temp,    board_temp_deg_c);        },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Id,     left. rtY.id);             },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Id,     right.rtY.id);             },
+        [](){ send(MotorController<isBackBoard, false>::Feedback::Iq,     left. rtY.iq);             },
+        [](){ send(MotorController<isBackBoard, true>:: Feedback::Iq,     right.rtY.iq); whichToSend = 0; },
+    };
+
+    arr[whichToSend++]();
 }
 #endif
 
