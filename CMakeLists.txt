@@ -37,7 +37,6 @@ include_directories(
     STM32CubeF1/Drivers/CMSIS/Device/ST/STM32F1xx/Include
     STM32CubeF1/Drivers/CMSIS/Include
     bobbycar-foc-model
-    bobbycar-protocol
 )
 
 add_library(stm32_hal STATIC
@@ -67,8 +66,8 @@ add_library(emanuel_foc_model STATIC
     bobbycar-foc-model/rtwtypes.h
 )
 
-add_library(bobbycar-protocol INTERFACE
-)
+add_library(bobbycar-protocol INTERFACE)
+target_include_directories(bobbycar-protocol INTERFACE bobbycar-protocol)
 
 
 set(COMMON_SOURCES
