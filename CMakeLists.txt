@@ -16,10 +16,11 @@ set(CMAKE_CXX_FLAGS "${COMMON_FLAGS}")
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-set(A_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH_a.ld")
-set(B_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH_b.ld")
-set(AB_BOOT_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ab_boot/STM32F103RCTx_FLASH_boot.ld")
-set(COMMON_LINKER_FLAGS -specs=nosys.specs -lc -lm -lnosys -lstdc++ -Wl,--gc-sections "-Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref")
+set(A_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/app_a.ld")
+set(B_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/app_b.ld")
+set(AB_BOOT_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/ab_boot.ld")
+set(COMMON_LINKER_FLAGS -specs=nosys.specs -lc -lm -lnosys -lstdc++ -Wl,--gc-sections "-Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref"
+                        -T${CMAKE_SOURCE_DIR}/ld/STM32F103RCTx_FLASH.ld)
 
 set(A_FIRMWARE_APP_BASE 0x08002000)
 set(B_FIRMWARE_APP_BASE 0x08020800)
