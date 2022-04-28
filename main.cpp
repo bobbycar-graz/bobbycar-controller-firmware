@@ -39,6 +39,8 @@
 #endif
 #ifdef FEATURE_CAN
 #include "bobbycar-can.h"
+#include "flasher/Flasher.hpp"
+#include "flasher/CANFlasher.hpp"
 #endif
 
 extern "C" {
@@ -112,7 +114,7 @@ CAN_HandleTypeDef     CanHandle;
 #define CANx_TX_IRQn                   USB_HP_CAN1_TX_IRQn
 #define CANx_TX_IRQHandler             USB_HP_CAN1_TX_IRQHandler
 
-constexpr bool doDelayWithCanPoll = false;
+constexpr bool doDelayWithCanPoll = true;
 #endif
 
 #ifdef LOG_TO_SERIAL
@@ -249,6 +251,7 @@ void sendFeedback();
 void parseCanCommand();
 void applyIncomingCanMessage();
 void sendCanFeedback();
+void sendFlasherFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -379,6 +382,7 @@ int main()
                 while ((HAL_GetTick() - tickstart) < wait)
                 {
                     applyIncomingCanMessage();
+                    sendFlasherFeedback();
                 }
             };
 
@@ -406,6 +410,7 @@ int main()
         parseCanCommand();
 
         sendCanFeedback();
+        sendFlasherFeedback();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -450,6 +455,7 @@ void updateMotors()
     if (offsetcount < 2000) // calibrate ADC offsets
     {
         offsetcount++;
+        // TODO this is not an average
         offsetrl1 = (adc_buffer.rl1 + offsetrl1) / 2;
         offsetrl2 = (adc_buffer.rl2 + offsetrl2) / 2;
         offsetrr1 = (adc_buffer.rr1 + offsetrr1) / 2;
@@ -1404,8 +1410,8 @@ void communicationTimeout()
 {
     applyDefaultSettings();
 
-    buzzer.freq = 24;
-    buzzer.pattern = 1;
+    //buzzer.freq = 24;
+    //buzzer.pattern = 1;
 
     HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
 }
@@ -1767,6 +1773,31 @@ void sendCanFeedback()
 
     arr[whichToSend++]();
 }
+
+void sendFlasherFeedback() {
+    using bobbycar::protocol::can::MotorController;
+    static CAN_TxHeaderTypeDef header = {
+        .StdId = MotorController<isBackBoard, false>::Command::FlasherCtrl,
+        .ExtId = 0,
+        .IDE = CAN_ID_STD,
+        .RTR = CAN_RTR_DATA,
+        .DLC = can_flasher::FeedbackSize,
+        .TransmitGlobalTime = DISABLE
+    };
+
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&CanHandle) == 0)
+        return;
+
+    uint8_t buf[8];
+    if (!can_flasher::poll_feedback(HAL_GetTick(), buf))
+        return;
+
+    uint32_t TxMailbox;
+    if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK) {
+        myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
+        //while (true);
+    }
+}
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -2061,4 +2092,25 @@ extern "C" void CANx_TX_IRQHandler(void)
     using namespace bobbycar::controller;
     HAL_CAN_IRQHandler(&CanHandle);
 }
+
+// CAN flasher stuff
+extern "C" void FLASH_IRQHandler(void)
+{
+    HAL_FLASH_IRQHandler();
+}
+
+extern "C" void HAL_FLASH_EndOfOperationCallback(uint32_t ReturnValue)
+{
+    (void)ReturnValue;
+
+    flasher::flash_callback(true);
+}
+
+extern "C" void HAL_FLASH_OperationErrorCallback(uint32_t ReturnValue)
+{
+    (void)ReturnValue;
+
+    flasher::flash_callback(false);
+}
+
 #endif
