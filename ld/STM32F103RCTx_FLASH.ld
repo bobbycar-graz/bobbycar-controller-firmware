@@ -39,7 +39,8 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
-RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 48K
+RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 47K
+PERSIST (rw)   : ORIGIN = 0x2000BC00, LENGTH =  1K
 FLASH (rx)     : ORIGIN = _App_Base,  LENGTH =  _App_Length
 CONFIG(r)      : ORIGIN = 0x0803f800, LENGTH =  2K
 }
@@ -154,6 +155,14 @@ SECTIONS
 
   /* Highest address of the user mode stack */
   _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM area */
+
+  .persist :
+  {
+    . = ALIGN(4);
+    persist = .;
+    . += LENGTH(PERSIST);
+    _epersist = .;
+  } > PERSIST
 
   /* Remove information from the standard libraries */
   /DISCARD/ :

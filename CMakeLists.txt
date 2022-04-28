@@ -76,6 +76,7 @@ set(COMMON_SOURCES
     defines.h
     main.cpp
     system_stm32f1xx.c
+    persist/persist.c
 )
 
 #
@@ -216,7 +217,11 @@ add_custom_target(greyhash ALL SOURCES greyhash.hex greyhash.bin)
 add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin ${A_FIRMWARE_APP_BASE} SOURCES greyhash.bin DEPENDS greyhash.bin)
 
 
-add_executable(ab_boot.elf ab_boot/ab_boot.c system_stm32f1xx.c)
+add_executable(ab_boot.elf
+    ab_boot/ab_boot.c
+    system_stm32f1xx.c
+    persist/persist.c
+)
 target_link_options(ab_boot.elf PRIVATE ${COMMON_LINKER_FLAGS} ${AB_BOOT_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(ab_boot.elf stm32_hal)
 target_compile_options(ab_boot.elf PRIVATE )

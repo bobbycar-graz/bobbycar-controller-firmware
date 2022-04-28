@@ -17,5 +17,5 @@
 
 struct ab_boot_config
 {
-    uint32_t boot_partition;
+    uint32_t *boot_partition;
 };

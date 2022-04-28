@@ -27,6 +27,8 @@
 #include <cstring>
 
 #include "stm32f1xx_hal.h"
+#include "ab_boot/ab_boot.h"
+#include "persist/persist.h"
 
 #include "defines.h"
 #include "config.h"
@@ -1364,22 +1366,36 @@ void MX_ADC2_Init()
     __HAL_ADC_ENABLE(&hadc2);
 }
 
-#ifdef FEATURE_BUTTON
-void poweroff()
+void shutdown()
 {
-//  if (abs(speed) < 20) {  // wait for the speed to drop, then shut down -> this is commented out for SAFETY reasons
     buzzer.pattern = 0;
     left.enable = false;
-    right.enable = 0;
+    right.enable = false;
 
     for (int i = 0; i < 8; i++) {
         buzzer.freq = (uint8_t)i;
         HAL_Delay(50);
     }
+}
+
+#ifdef FEATURE_BUTTON
+void poweroff()
+{
+    shutdown();
+
     HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
     for (int i = 0; i < 5; i++)
         HAL_Delay(1000);
-//  }
+}
+#endif
+
+#ifdef FEATURE_CAN
+void reboot_new_image(uint32_t *bootp)
+{
+    shutdown();
+
+    request_boot_image(bootp);
+    HAL_NVIC_SystemReset();
 }
 #endif
 
