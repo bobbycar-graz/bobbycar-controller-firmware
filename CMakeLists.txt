@@ -98,8 +98,6 @@ target_compile_options(motortest.elf PRIVATE
 #    -DFEATURE_CAN
 #    -DCAN_LOG_UNKNOWN_ADDR
 #    -DIS_BACK
-
-    -DVECT_TAB_OFFSET=${A_FIRMWARE_APP_BASE}
 )
 add_custom_command(OUTPUT motortest.hex COMMAND arm-none-eabi-objcopy -O ihex motortest.elf motortest.hex DEPENDS motortest.elf)
 add_custom_command(OUTPUT motortest.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest.elf motortest.bin DEPENDS motortest.elf)
@@ -128,8 +126,6 @@ target_compile_options(motortest_peter.elf PRIVATE
         -DFEATURE_CAN
     #    -DCAN_LOG_UNKNOWN_ADDR
         -DIS_BACK
-
-    -DVECT_TAB_OFFSET=${A_FIRMWARE_APP_BASE}
 )
 add_custom_command(OUTPUT motortest_peter.hex COMMAND arm-none-eabi-objcopy -O ihex motortest_peter.elf motortest_peter.hex DEPENDS motortest_peter.elf)
 add_custom_command(OUTPUT motortest_peter.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest_peter.elf motortest_peter.bin DEPENDS motortest_peter.elf)
@@ -158,8 +154,6 @@ target_compile_options(feedcode-front.elf PRIVATE
     -DFEATURE_CAN
 #    -DCAN_LOG_UNKNOWN_ADDR
 #    -DIS_BACK
-
-    -DVECT_TAB_OFFSET=${A_FIRMWARE_APP_BASE}
 )
 add_custom_command(OUTPUT feedcode-front.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-front.elf feedcode-front.hex DEPENDS feedcode-front.elf)
 add_custom_command(OUTPUT feedcode-front.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-front.elf feedcode-front.bin DEPENDS feedcode-front.elf)
@@ -187,8 +181,6 @@ target_compile_options(feedcode-back.elf PRIVATE
     -DFEATURE_CAN
 #    -DCAN_LOG_UNKNOWN_ADDR
     -DIS_BACK
-
-    -DVECT_TAB_OFFSET=${A_FIRMWARE_APP_BASE}
 )
 add_custom_command(OUTPUT feedcode-back.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-back.elf feedcode-back.hex DEPENDS feedcode-back.elf)
 add_custom_command(OUTPUT feedcode-back.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-back.elf feedcode-back.bin DEPENDS feedcode-back.elf)
@@ -216,8 +208,6 @@ target_compile_options(greyhash.elf PRIVATE
 #    -DFEATURE_CAN
 #    -DCAN_LOG_UNKNOWN_ADDR
 #    -DIS_BACK
-
-    -DVECT_TAB_OFFSET=${A_FIRMWARE_APP_BASE}
 )
 add_custom_command(OUTPUT greyhash.hex COMMAND arm-none-eabi-objcopy -O ihex greyhash.elf greyhash.hex DEPENDS greyhash.elf)
 add_custom_command(OUTPUT greyhash.bin COMMAND arm-none-eabi-objcopy -O binary -S greyhash.elf greyhash.bin DEPENDS greyhash.elf)
@@ -228,9 +218,7 @@ add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin ${A
 add_executable(ab_boot.elf ab_boot/ab_boot.c system_stm32f1xx.c)
 target_link_options(ab_boot.elf PRIVATE ${COMMON_LINKER_FLAGS} ${AB_BOOT_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(ab_boot.elf stm32_hal)
-target_compile_options(ab_boot.elf PRIVATE
-    -DVECT_TAB_OFFSET=0x00000000
-)
+target_compile_options(ab_boot.elf PRIVATE )
 add_custom_command(OUTPUT ab_boot.hex COMMAND arm-none-eabi-objcopy -O ihex ab_boot.elf ab_boot.hex DEPENDS ab_boot.elf)
 add_custom_command(OUTPUT ab_boot.bin COMMAND arm-none-eabi-objcopy -O binary -S ab_boot.elf ab_boot.bin DEPENDS ab_boot.elf)
 add_custom_target(ab_boot ALL SOURCES ab_boot.hex ab_boot.bin)

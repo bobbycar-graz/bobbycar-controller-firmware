@@ -110,11 +110,9 @@
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */
 /* #define VECT_TAB_SRAM */
-#if !defined(VECT_TAB_OFFSET)
-#warning VECT_TAB_OFFSET is not defined, using default of 0x00000000U
-#define VECT_TAB_OFFSET 0x00000000U /*!< Vector Table base offset field. \
+extern unsigned int g_pfnVectors[];
+#define VECT_TAB_OFFSET ((unsigned int)g_pfnVectors) /*!< Vector Table base offset field. \
                                  This value must be a multiple of 0x200. */
-#endif /* VECT_TAB_OFFSET */
 
 /**
   * @}
