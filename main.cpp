@@ -1050,6 +1050,10 @@ void MX_GPIO_Init()
 
     GPIO_InitStruct.Pin = LED_PIN;
     HAL_GPIO_Init(LED_PORT, &GPIO_InitStruct);
+	
+	GPIO_InitStruct.Pin = LIGHT_PIN;
+    HAL_GPIO_Init(LIGHT_PORT, &GPIO_InitStruct);
+    __HAL_AFIO_REMAP_SWJ_NOJTAG();
 
     GPIO_InitStruct.Pin = BUZZER_PIN;
     HAL_GPIO_Init(BUZZER_PORT, &GPIO_InitStruct);
@@ -1392,6 +1396,7 @@ void communicationTimeout()
     buzzer.pattern = 1;
 
     HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LIGHT_PORT, LIGHT_PIN, GPIO_PIN_RESET);
 }
 
 #ifdef MOTOR_TEST
@@ -1497,6 +1502,7 @@ void parseCommand()
 #endif
 
         HAL_GPIO_WritePin(LED_PORT, LED_PIN, command.led ? GPIO_PIN_RESET : GPIO_PIN_SET);
+		HAL_GPIO_WritePin(LIGHT_PORT, LIGHT_PIN, command.led ? GPIO_PIN_SET : GPIO_PIN_RESET);
 
         command.start     = Command::INVALID_HEADER; // Change the Start Frame for timeout detection in the next cycle
         timeoutCntSerial  = 0;                       // Reset the timeout counter
@@ -1645,6 +1651,7 @@ void applyIncomingCanMessage()
     case MotorController<isBackBoard, false>::Command::Led:
     case MotorController<isBackBoard, true> ::Command::Led:
         HAL_GPIO_WritePin(LED_PORT, LED_PIN, *((bool*)buf) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(LIGHT_PORT, LIGHT_PIN, *((bool*)buf) ? GPIO_PIN_SET : GPIO_PIN_RESET);
         break;
     case MotorController<isBackBoard, false>::Command::Poweroff:
     case MotorController<isBackBoard, true>::Command::Poweroff:

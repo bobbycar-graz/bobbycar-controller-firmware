@@ -185,6 +185,9 @@
 #define LED_PIN GPIO_PIN_2
 #define LED_PORT GPIOB
 
+#define LIGHT_PIN GPIO_PIN_3
+#define LIGHT_PORT GPIOB
+
 #define BUZZER_PIN GPIO_PIN_4
 #define BUZZER_PORT GPIOA
 
