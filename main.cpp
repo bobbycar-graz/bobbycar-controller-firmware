@@ -178,6 +178,8 @@ protocol::serial::Feedback feedback;
 #ifdef FEATURE_CAN
 std::atomic<int16_t> timeoutCntLeft   = 0;
 std::atomic<int16_t> timeoutCntRight  = 0;
+
+uint32_t *reboot_request_address = 0;
 #endif
 
 uint32_t main_loop_counter;
@@ -252,6 +254,7 @@ void parseCanCommand();
 void applyIncomingCanMessage();
 void sendCanFeedback();
 void sendFlasherFeedback();
+void handleFlasher();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -410,7 +413,7 @@ int main()
         parseCanCommand();
 
         sendCanFeedback();
-        sendFlasherFeedback();
+        handleFlasher();
 #endif
 
 #ifdef FEATURE_BUTTON
@@ -1670,11 +1673,21 @@ void applyIncomingCanMessage()
         break;
     case MotorController<isBackBoard, false>::Command::Poweroff:
     case MotorController<isBackBoard, true>::Command::Poweroff:
+        {
+            if (header.DLC >= 2)
+            {
+                // Reboot selected image
+                reboot_request_address = (uint32_t *)((*(uint8_t *)buf == 0) ? APP_A_START : APP_B_START);
+            }
+            else
+            {
 #ifdef FEATURE_BUTTON
-        if (*((bool*)buf))
-            poweroff();
+                if (*((bool*)buf))
+                    poweroff();
 #endif
-        break;
+            }
+            break;
+        }
     default:
 #ifndef CAN_LOG_UNKNOWN_ADDR
         if constexpr (false)
@@ -1796,6 +1809,16 @@ void sendFlasherFeedback() {
     if (const auto result = HAL_CAN_AddTxMessage(&CanHandle, &header, buf, &TxMailbox); result != HAL_OK) {
         myPrintf("HAL_CAN_AddTxMessage() failed with %i", result);
         //while (true);
+    }
+}
+
+void handleFlasher()
+{
+    sendFlasherFeedback();
+
+    if (reboot_request_address)
+    {
+        reboot_new_image(reboot_request_address);
     }
 }
 #endif
