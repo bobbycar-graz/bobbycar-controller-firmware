@@ -16,9 +16,16 @@ set(CMAKE_CXX_FLAGS "${COMMON_FLAGS}")
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-set(COMMON_LINKER_FLAGS "-specs=nosys.specs -T${CMAKE_SOURCE_DIR}/STM32F103RCTx_FLASH.ld -lc -lm -lnosys -lstdc++ -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref")
-set(CMAKE_EXE_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
-set(CMAKE_SHARED_LINKER_FLAGS "${COMMON_LINKER_FLAGS}")
+set(A_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/app_a.ld")
+set(B_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/app_b.ld")
+set(AB_BOOT_FIRMWARE_LINKER_FLAGS "-T${CMAKE_SOURCE_DIR}/ld/ab_boot.ld")
+set(COMMON_LINKER_FLAGS -specs=nosys.specs -lc -lm -lnosys -lstdc++ -Wl,--gc-sections "-Wl,-Map=${CMAKE_BINARY_DIR}/hover.map,--cref"
+                        -T${CMAKE_SOURCE_DIR}/ld/STM32F103RCTx_FLASH.ld)
+
+set(A_FIRMWARE_APP_BASE 0x08002000)
+set(B_FIRMWARE_APP_BASE 0x08020800)
+
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(bobbycar-controller-firmware ASM C CXX)
 
@@ -31,7 +38,6 @@ include_directories(
     STM32CubeF1/Drivers/CMSIS/Device/ST/STM32F1xx/Include
     STM32CubeF1/Drivers/CMSIS/Include
     bobbycar-foc-model
-    bobbycar-protocol
 )
 
 add_library(stm32_hal STATIC
@@ -52,7 +58,6 @@ add_library(stm32_hal STATIC
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c
     STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_can.c
     startup_stm32f103xe.s
-    system_stm32f1xx.c
 )
 
 add_library(emanuel_foc_model STATIC
@@ -62,16 +67,23 @@ add_library(emanuel_foc_model STATIC
     bobbycar-foc-model/rtwtypes.h
 )
 
-add_library(bobbycar-protocol INTERFACE
+add_library(bobbycar-protocol INTERFACE)
+target_include_directories(bobbycar-protocol INTERFACE bobbycar-protocol)
+
+
+set(COMMON_SOURCES
+    config.h
+    defines.h
+    main.cpp
+    system_stm32f1xx.c
+    persist/persist.c
 )
-
-
-
 
 #
 # motor test
 #
-add_executable(motortest.elf config.h defines.h main.cpp)
+add_executable(motortest.elf ${COMMON_SOURCES})
+target_link_options(motortest.elf PRIVATE ${COMMON_LINKER_FLAGS} ${A_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(motortest.elf stm32_hal emanuel_foc_model bobbycar-protocol)
 target_compile_options(motortest.elf PRIVATE
     -DMOTOR_TEST
@@ -92,12 +104,13 @@ target_compile_options(motortest.elf PRIVATE
 add_custom_command(OUTPUT motortest.hex COMMAND arm-none-eabi-objcopy -O ihex motortest.elf motortest.hex DEPENDS motortest.elf)
 add_custom_command(OUTPUT motortest.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest.elf motortest.bin DEPENDS motortest.elf)
 add_custom_target(motortest ALL SOURCES motortest.hex motortest.bin)
-add_custom_target(flash-motortest COMMAND st-flash --reset write motortest.bin 0x8000000 SOURCES motortest.bin DEPENDS motortest.bin)
+add_custom_target(flash-motortest COMMAND st-flash --reset write motortest.bin ${A_FIRMWARE_APP_BASE} SOURCES motortest.bin DEPENDS motortest.bin)
 
 #
 # motor test peter
 #
-add_executable(motortest_peter.elf config.h defines.h main.cpp)
+add_executable(motortest_peter.elf ${COMMON_SOURCES})
+target_link_options(motortest_peter.elf PRIVATE ${COMMON_LINKER_FLAGS} ${A_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(motortest_peter.elf stm32_hal emanuel_foc_model bobbycar-protocol)
 target_compile_options(motortest_peter.elf PRIVATE
     #-DMOTOR_TEST
@@ -119,13 +132,14 @@ target_compile_options(motortest_peter.elf PRIVATE
 add_custom_command(OUTPUT motortest_peter.hex COMMAND arm-none-eabi-objcopy -O ihex motortest_peter.elf motortest_peter.hex DEPENDS motortest_peter.elf)
 add_custom_command(OUTPUT motortest_peter.bin COMMAND arm-none-eabi-objcopy -O binary -S motortest_peter.elf motortest_peter.bin DEPENDS motortest_peter.elf)
 add_custom_target(motortest_peter ALL SOURCES motortest_peter.hex motortest_peter.bin)
-add_custom_target(flash-motortest_peter COMMAND st-flash --reset write motortest_peter.bin 0x8000000 SOURCES motortest_peter.bin DEPENDS motortest_peter.bin)
+add_custom_target(flash-motortest_peter COMMAND st-flash --reset write motortest_peter.bin ${A_FIRMWARE_APP_BASE} SOURCES motortest_peter.bin DEPENDS motortest_peter.bin)
 
 
 #
 # feedc0de front
 #
-add_executable(feedcode-front.elf config.h defines.h main.cpp)
+add_executable(feedcode-front.elf ${COMMON_SOURCES})
+target_link_options(feedcode-front.elf PRIVATE ${COMMON_LINKER_FLAGS} ${A_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(feedcode-front.elf stm32_hal emanuel_foc_model bobbycar-protocol)
 target_compile_options(feedcode-front.elf PRIVATE
 #    -DMOTOR_TEST
@@ -146,12 +160,13 @@ target_compile_options(feedcode-front.elf PRIVATE
 add_custom_command(OUTPUT feedcode-front.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-front.elf feedcode-front.hex DEPENDS feedcode-front.elf)
 add_custom_command(OUTPUT feedcode-front.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-front.elf feedcode-front.bin DEPENDS feedcode-front.elf)
 add_custom_target(feedcode-front ALL SOURCES feedcode-front.hex feedcode-front.bin)
-add_custom_target(flash-feedcode-front COMMAND st-flash --reset write feedcode-front.bin 0x8000000 SOURCES feedcode-front.bin DEPENDS feedcode-front.bin)
+add_custom_target(flash-feedcode-front COMMAND st-flash --reset write feedcode-front.bin ${A_FIRMWARE_APP_BASE} SOURCES feedcode-front.bin DEPENDS feedcode-front.bin)
 
 #
 # feedc0de back
 #
-add_executable(feedcode-back.elf config.h defines.h main.cpp)
+add_executable(feedcode-back.elf ${COMMON_SOURCES})
+target_link_options(feedcode-back.elf PRIVATE ${COMMON_LINKER_FLAGS} ${A_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(feedcode-back.elf stm32_hal emanuel_foc_model bobbycar-protocol)
 target_compile_options(feedcode-back.elf PRIVATE
 #    -DMOTOR_TEST
@@ -172,12 +187,13 @@ target_compile_options(feedcode-back.elf PRIVATE
 add_custom_command(OUTPUT feedcode-back.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode-back.elf feedcode-back.hex DEPENDS feedcode-back.elf)
 add_custom_command(OUTPUT feedcode-back.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode-back.elf feedcode-back.bin DEPENDS feedcode-back.elf)
 add_custom_target(feedcode-back ALL SOURCES feedcode-back.hex feedcode-back.bin)
-add_custom_target(flash-feedcode-back COMMAND st-flash --reset write feedcode-back.bin 0x8000000 SOURCES feedcode-back.bin DEPENDS feedcode-back.bin)
+add_custom_target(flash-feedcode-back COMMAND st-flash --reset write feedcode-back.bin ${A_FIRMWARE_APP_BASE} SOURCES feedcode-back.bin DEPENDS feedcode-back.bin)
 
 #
 # greyhash
 #
-add_executable(greyhash.elf config.h defines.h main.cpp)
+add_executable(greyhash.elf ${COMMON_SOURCES})
+target_link_options(greyhash.elf PRIVATE ${COMMON_LINKER_FLAGS} ${A_FIRMWARE_LINKER_FLAGS})
 target_link_libraries(greyhash.elf stm32_hal emanuel_foc_model bobbycar-protocol)
 target_compile_options(greyhash.elf PRIVATE
 #    -DMOTOR_TEST
@@ -198,10 +214,21 @@ target_compile_options(greyhash.elf PRIVATE
 add_custom_command(OUTPUT greyhash.hex COMMAND arm-none-eabi-objcopy -O ihex greyhash.elf greyhash.hex DEPENDS greyhash.elf)
 add_custom_command(OUTPUT greyhash.bin COMMAND arm-none-eabi-objcopy -O binary -S greyhash.elf greyhash.bin DEPENDS greyhash.elf)
 add_custom_target(greyhash ALL SOURCES greyhash.hex greyhash.bin)
-add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin 0x8000000 SOURCES greyhash.bin DEPENDS greyhash.bin)
+add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin ${A_FIRMWARE_APP_BASE} SOURCES greyhash.bin DEPENDS greyhash.bin)
 
 
-
+add_executable(ab_boot.elf
+    ab_boot/ab_boot.c
+    system_stm32f1xx.c
+    persist/persist.c
+)
+target_link_options(ab_boot.elf PRIVATE ${COMMON_LINKER_FLAGS} ${AB_BOOT_FIRMWARE_LINKER_FLAGS})
+target_link_libraries(ab_boot.elf stm32_hal)
+target_compile_options(ab_boot.elf PRIVATE )
+add_custom_command(OUTPUT ab_boot.hex COMMAND arm-none-eabi-objcopy -O ihex ab_boot.elf ab_boot.hex DEPENDS ab_boot.elf)
+add_custom_command(OUTPUT ab_boot.bin COMMAND arm-none-eabi-objcopy -O binary -S ab_boot.elf ab_boot.bin DEPENDS ab_boot.elf)
+add_custom_target(ab_boot ALL SOURCES ab_boot.hex ab_boot.bin)
+add_custom_target(flash-boot COMMAND st-flash --reset write ab_boot.bin 0x08000000 SOURCES ab_boot.bin DEPENDS ab_boot.bin)
 
 
 # util targets
