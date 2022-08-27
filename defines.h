@@ -24,57 +24,63 @@
 
 #ifdef PETERS_PLATINE
 
-#ifdef HALL_CAB
+#ifdef LEFT_HALL_CAB
     #define LEFT_HALL_U_PIN GPIO_PIN_11
     #define LEFT_HALL_V_PIN GPIO_PIN_12
     #define LEFT_HALL_W_PIN GPIO_PIN_10
-#elif HALL_CBA
+#elif LEFT_HALL_CBA
     #define LEFT_HALL_U_PIN GPIO_PIN_11
     #define LEFT_HALL_V_PIN GPIO_PIN_10
     #define LEFT_HALL_W_PIN GPIO_PIN_12
-#elif HALL_BAC
+#elif LEFT_HALL_BAC
     #define LEFT_HALL_U_PIN GPIO_PIN_10
     #define LEFT_HALL_V_PIN GPIO_PIN_12
     #define LEFT_HALL_W_PIN GPIO_PIN_11
-#elif HALL_BCA
+#elif LEFT_HALL_BCA
     #define LEFT_HALL_U_PIN GPIO_PIN_10
     #define LEFT_HALL_V_PIN GPIO_PIN_11
     #define LEFT_HALL_W_PIN GPIO_PIN_12
-#elif HALL_ABC
+#elif LEFT_HALL_ABC
     #define LEFT_HALL_U_PIN GPIO_PIN_12
     #define LEFT_HALL_V_PIN GPIO_PIN_10
     #define LEFT_HALL_W_PIN GPIO_PIN_11
-#else //HALL_ACB
+#else //LEFT_HALL_ACB
+#ifndef LEFT_HALL_ACB
+    #warning "No left Hall configuration defined, using default ACB"
+#endif
     #define LEFT_HALL_U_PIN GPIO_PIN_12
     #define LEFT_HALL_V_PIN GPIO_PIN_11
     #define LEFT_HALL_W_PIN GPIO_PIN_10
 #endif
 
-    #define LEFT_HALL_U_PORT GPIOC
-    #define LEFT_HALL_V_PORT GPIOC
-    #define LEFT_HALL_W_PORT GPIOC
+#define LEFT_HALL_U_PORT GPIOC
+#define LEFT_HALL_V_PORT GPIOC
+#define LEFT_HALL_W_PORT GPIOC
 
-#ifdef HALL_CAB
+#ifdef RIGHT_HALL_CAB
     #define RIGHT_HALL_U_PIN GPIO_PIN_6
     #define RIGHT_HALL_V_PIN GPIO_PIN_5
     #define RIGHT_HALL_W_PIN GPIO_PIN_7
-#elif HALL_CBA
+#elif RIGHT_HALL_CBA
     #define RIGHT_HALL_U_PIN GPIO_PIN_6
     #define RIGHT_HALL_V_PIN GPIO_PIN_7
     #define RIGHT_HALL_W_PIN GPIO_PIN_5
-#elif HALL_BAC
+#elif RIGHT_HALL_BAC
     #define RIGHT_HALL_U_PIN GPIO_PIN_7
     #define RIGHT_HALL_V_PIN GPIO_PIN_5
     #define RIGHT_HALL_W_PIN GPIO_PIN_6
-#elif HALL_BCA
+#elif RIGHT_HALL_BCA
     #define RIGHT_HALL_U_PIN GPIO_PIN_7
     #define RIGHT_HALL_V_PIN GPIO_PIN_6
     #define RIGHT_HALL_W_PIN GPIO_PIN_5
-#elif HALL_ABC
+#elif RIGHT_HALL_ABC
     #define RIGHT_HALL_U_PIN GPIO_PIN_5
     #define RIGHT_HALL_V_PIN GPIO_PIN_7
     #define RIGHT_HALL_W_PIN GPIO_PIN_6
-#else //HALL_ACB
+#else //RIGHT_HALL_ACB
+#ifndef RIGHT_HALL_ACB
+    #warning "No right Hall configuration defined, using default ACB"
+#endif
     #define RIGHT_HALL_U_PIN GPIO_PIN_5
     #define RIGHT_HALL_V_PIN GPIO_PIN_6
     #define RIGHT_HALL_W_PIN GPIO_PIN_7
@@ -83,7 +89,7 @@
     #define RIGHT_HALL_U_PORT GPIOB
     #define RIGHT_HALL_V_PORT GPIOB
     #define RIGHT_HALL_W_PORT GPIOB
-#else
+#else // defined(PETERS_PLATINE)
 #ifdef HALL_BCA
     #define LEFT_HALL_U_PIN GPIO_PIN_7
     #define LEFT_HALL_V_PIN GPIO_PIN_6

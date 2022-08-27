@@ -200,8 +200,108 @@ add_custom_command(OUTPUT greyhash.bin COMMAND arm-none-eabi-objcopy -O binary -
 add_custom_target(greyhash ALL SOURCES greyhash.hex greyhash.bin)
 add_custom_target(flash-greyhash COMMAND st-flash --reset write greyhash.bin 0x8000000 SOURCES greyhash.bin DEPENDS greyhash.bin)
 
+#
+# peters platine v2 front
+#
+add_executable(pcbv2_front.elf config.h defines.h main.cpp)
+target_link_libraries(pcbv2_front.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(pcbv2_front.elf PRIVATE
+        #    -DMOTOR_TEST
+        -DFEATURE_IGNORE_OTHER_MOTOR
+        #    -DHALL_BCA
+        #    -DPWM_FREQ_12KHZ
+        #    -DFEATURE_BUTTON
+        -DPETERS_PLATINE
+        #    -DHUART2
+        #    -DHUART3
+        #    -DFEATURE_SERIAL_CONTROL
+        #    -DFEATURE_SERIAL_FEEDBACK
+        #    -DLOG_TO_SERIAL
+        -DFEATURE_CAN
+        #    -DCAN_LOG_UNKNOWN_ADDR
+        #     -DIS_BACK
+        -DAMPERE2BIT_CONV=28
+)
+add_custom_command(OUTPUT pcbv2_front.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_front.elf pcbv2_front.hex DEPENDS pcbv2_front.elf)
+add_custom_command(OUTPUT pcbv2_front.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_front.elf pcbv2_front.bin DEPENDS pcbv2_front.elf)
+add_custom_target(pcbv2_front ALL SOURCES pcbv2_front.hex pcbv2_front.bin)
+add_custom_target(flash-pcbv2_front COMMAND st-flash --reset write pcbv2_front.bin 0x8000000 SOURCES pcbv2_front.bin DEPENDS pcbv2_front.bin)
 
+#
+# peters platine v2 back
+#
+add_executable(pcbv2_back.elf config.h defines.h main.cpp)
+target_link_libraries(pcbv2_back.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(pcbv2_back.elf PRIVATE
+        #    -DMOTOR_TEST
+        -DFEATURE_IGNORE_OTHER_MOTOR
+        #    -DHALL_BCA
+        #    -DPWM_FREQ_12KHZ
+        #    -DFEATURE_BUTTON
+        -DPETERS_PLATINE
+        #    -DHUART2
+        #    -DHUART3
+        #    -DFEATURE_SERIAL_CONTROL
+        #    -DFEATURE_SERIAL_FEEDBACK
+        #    -DLOG_TO_SERIAL
+        -DFEATURE_CAN
+        #    -DCAN_LOG_UNKNOWN_ADDR
+        -DIS_BACK
+        -DAMPERE2BIT_CONV=28
+)
+add_custom_command(OUTPUT pcbv2_back.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_back.elf pcbv2_back.hex DEPENDS pcbv2_back.elf)
+add_custom_command(OUTPUT pcbv2_back.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_back.elf pcbv2_back.bin DEPENDS pcbv2_back.elf)
+add_custom_target(pcbv2_back ALL SOURCES pcbv2_back.hex pcbv2_back.bin)
+add_custom_target(flash-pcbv2_back COMMAND st-flash --reset write pcbv2_back.bin 0x8000000 SOURCES pcbv2_back.bin DEPENDS pcbv2_back.bin)
 
+#
+# peters platine v2 motortest
+#
+add_executable(pcbv2_test.elf config.h defines.h main.cpp)
+target_link_libraries(pcbv2_test.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(pcbv2_test.elf PRIVATE
+        -DMOTOR_TEST
+        -DFEATURE_IGNORE_OTHER_MOTOR
+        #    -DHALL_BCA
+        #    -DPWM_FREQ_12KHZ
+        #    -DFEATURE_BUTTON
+        -DPETERS_PLATINE
+        #    -DHUART2
+        #    -DHUART3
+        #    -DFEATURE_SERIAL_CONTROL
+        #    -DFEATURE_SERIAL_FEEDBACK
+        #    -DLOG_TO_SERIAL
+        #    -DFEATURE_CAN
+        #    -DCAN_LOG_UNKNOWN_ADDR
+        #    -DIS_BACK
+        -DAMPERE2BIT_CONV=28
+        -DLEFT_HALL_ABC
+        #-DLEFT_HALL_ACB
+        #-DLEFT_HALL_BAC
+        #-DLEFT_HALL_BCA
+        #-DLEFT_HALL_CAB
+        #-DLEFT_HALL_CBA
+
+        -DRIGHT_HALL_ABC
+        #-DRIGHT_HALL_ACB
+        #-DRIGHT_HALL_BAC
+        #-DRIGHT_HALL_BCA
+        #-DRIGHT_HALL_CAB
+        #-DRIGHT_HALL_CBA
+
+        -DFEATURE_BETTER_FOC_CONFIG
+        -DLEFT_PHASE_MEAS_AB
+        #-DLEFT_PHASE_MEAS_AC
+        #-DLEFT_PHASE_MEAS_BC
+
+        #-DRIGHT_PHASE_MEAS_AB
+        #-DRIGHT_PHASE_MEAS_AC
+        -DRIGHT_PHASE_MEAS_BC
+)
+add_custom_command(OUTPUT pcbv2_test.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_test.elf pcbv2_test.hex DEPENDS pcbv2_test.elf)
+add_custom_command(OUTPUT pcbv2_test.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_test.elf pcbv2_test.bin DEPENDS pcbv2_test.elf)
+add_custom_target(pcbv2_test ALL SOURCES pcbv2_test.hex pcbv2_test.bin)
+add_custom_target(flash-pcbv2_test COMMAND st-flash --reset write pcbv2_test.bin 0x8000000 SOURCES pcbv2_test.bin DEPENDS pcbv2_test.bin)
 
 
 # util targets

@@ -6,7 +6,10 @@
 #define PWM_FREQ            16000     // PWM frequency in Hz
 #endif
 #define DEAD_TIME              48     // PWM deadtime
-#define A2BIT_CONV             50     // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
+
+#ifndef AMPERE2BIT_CONV
+#define AMPERE2BIT_CONV        50     // Ampere to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
+#endif
 
 // ADC conversion time definitions
 #define ADC_CONV_TIME_1C5       (14)  //Total ADC clock cycles / conversion = (  1.5+12.5)

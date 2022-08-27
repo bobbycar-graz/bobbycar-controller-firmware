@@ -317,6 +317,7 @@ int main()
 
         enum { CurrentMeasAB, CurrentMeasBC, CurrentMeasAC };
 
+#ifndef FEATURE_BETTER_FOC_CONFIG
 #ifdef PETERS_PLATINE
         left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
 #else
@@ -324,6 +325,23 @@ int main()
 #endif
 
         right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
+#else
+#ifdef LEFT_PHASE_MEAS_AB
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasAB;
+#elif LEFT_PHASE_MEAS_BC
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasBC;
+#else
+        left.rtP.z_selPhaCurMeasABC  = CurrentMeasAC;
+#endif
+
+#ifdef RIGHT_PHASE_MEAS_AB
+        right.rtP.z_selPhaCurMeasABC = CurrentMeasAB;
+#elif RIGHT_PHASE_MEAS_BC
+        right.rtP.z_selPhaCurMeasABC = CurrentMeasBC;
+#else
+        right.rtP.z_selPhaCurMeasABC = CurrentMeasAC;
+#endif
+#endif
     }
 
     applyDefaultSettings();
@@ -477,11 +495,11 @@ void updateMotors()
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
 
-    const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * A2BIT_CONV);
+    const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * AMPERE2BIT_CONV);
     if (chopL)
         left.chops++;
 
-    const bool chopR = std::abs(curR_DC) > (right.iDcMax.load() * A2BIT_CONV);
+    const bool chopR = std::abs(curR_DC) > (right.iDcMax.load() * AMPERE2BIT_CONV);
     if (chopR)
         right.chops++;
 
@@ -1403,22 +1421,22 @@ void doMotorTest()
 
     left.enable = true;
     left.rtU.r_inpTgt            = pwm;
-    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
-    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Torque);
-    left.rtP.i_max               = (2 * A2BIT_CONV) << 4;
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::Sinusoidal);
+    left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Voltage);
+    left.rtP.i_max               = (2 * AMPERE2BIT_CONV) << 4;
     left.iDcMax                  = 8;
     left.rtP.n_max               = 1000 << 4;
-    left.rtP.id_fieldWeakMax     = (0 * A2BIT_CONV) << 4;
+    left.rtP.id_fieldWeakMax     = (0 * AMPERE2BIT_CONV) << 4;
     left.rtP.a_phaAdvMax         = 40 << 4;
 
     right.enable = true;
     right.rtU.r_inpTgt           = -pwm;
     right.rtP.z_ctrlTypSel       = uint8_t(ControlType::FieldOrientedControl);
-    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Torque);
-    right.rtP.i_max              = (2 * A2BIT_CONV) << 4;
+    right.rtU.z_ctrlModReq       = uint8_t(ControlMode::Voltage);
+    right.rtP.i_max              = (2 * AMPERE2BIT_CONV) << 4;
     right.iDcMax                 = 8;
     right.rtP.n_max              = 1000 << 4;
-    right.rtP.id_fieldWeakMax    = (0 * A2BIT_CONV) << 4;
+    right.rtP.id_fieldWeakMax    = (0 * AMPERE2BIT_CONV) << 4;
     right.rtP.a_phaAdvMax        = 40 << 4;
 
     constexpr auto pwmMax = 400;
@@ -1471,9 +1489,9 @@ void parseCommand()
         left.iDcMax = command.left.iDcMax;
 
         left.rtP.z_ctrlTypSel    = uint8_t(command.left.ctrlTyp);
-        left.rtP.i_max           = (int16_t(command.left.iMotMax) * A2BIT_CONV) << 4;
+        left.rtP.i_max           = (int16_t(command.left.iMotMax) * AMPERE2BIT_CONV) << 4;
         left.rtP.n_max           = command.left.nMotMax << 4;
-        left.rtP.id_fieldWeakMax = (int16_t(command.left.fieldWeakMax) * A2BIT_CONV) << 4;
+        left.rtP.id_fieldWeakMax = (int16_t(command.left.fieldWeakMax) * AMPERE2BIT_CONV) << 4;
         left.rtP.a_phaAdvMax     = command.left.phaseAdvMax << 4;
         left.rtU.z_ctrlModReq    = uint8_t(command.left.ctrlMod);
         left.rtU.r_inpTgt        = command.left.pwm;
@@ -1481,9 +1499,9 @@ void parseCommand()
         right.iDcMax = command.right.iDcMax;
 
         right.rtP.z_ctrlTypSel    = uint8_t(command.right.ctrlTyp);
-        right.rtP.i_max           = (int16_t(command.right.iMotMax) * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+        right.rtP.i_max           = (int16_t(command.right.iMotMax) * AMPERE2BIT_CONV) << 4;        // fixdt(1,16,4)
         right.rtP.n_max           = command.right.nMotMax << 4;                       // fixdt(1,16,4)
-        right.rtP.id_fieldWeakMax = (int16_t(command.right.fieldWeakMax) * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+        right.rtP.id_fieldWeakMax = (int16_t(command.right.fieldWeakMax) * AMPERE2BIT_CONV) << 4;   // fixdt(1,16,4)
         right.rtP.a_phaAdvMax     = command.right.phaseAdvMax << 4;                   // fixdt(1,16,4)
         right.rtU.z_ctrlModReq    = uint8_t(command.right.ctrlMod);
         right.rtU.r_inpTgt        = command.right.pwm;
@@ -1624,14 +1642,14 @@ void applyIncomingCanMessage()
     case MotorController<isBackBoard, true> ::Command::CtrlTyp:       right.rtP.z_ctrlTypSel    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, false>::Command::CtrlMod:       left .rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, true> ::Command::CtrlMod:       right.rtU.z_ctrlModReq    = *((uint8_t*)buf);       break;
-    case MotorController<isBackBoard, false>::Command::IMotMax:       left .rtP.i_max           = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
-    case MotorController<isBackBoard, true> ::Command::IMotMax:       right.rtP.i_max           = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::IMotMax:       left .rtP.i_max           = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::IMotMax:       right.rtP.i_max           = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, false>::Command::IDcMax:        left .iDcMax              = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, true> ::Command::IDcMax:        right.iDcMax              = *((uint8_t*)buf);       break;
     case MotorController<isBackBoard, false>::Command::NMotMax:       left .rtP.n_max           = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, true> ::Command::NMotMax:       right.rtP.n_max           = *((uint16_t*)buf) << 4; break;
-    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
-    case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * A2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left .rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, true> ::Command::PhaseAdvMax:   right.rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, false>::Command::CruiseCtrlEna: left .rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
@@ -1815,10 +1833,10 @@ void applyDefaultSettings()
         motor.rtU.r_inpTgt            = 0;
         motor.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
         motor.rtU.z_ctrlModReq        = uint8_t(ControlMode::OpenMode);
-        motor.rtP.i_max               = (5 * A2BIT_CONV) << 4;
+        motor.rtP.i_max               = (5 * AMPERE2BIT_CONV) << 4;
         motor.iDcMax                  = 7;
         motor.rtP.n_max               = 1000 << 4;
-        motor.rtP.id_fieldWeakMax     = (1 * A2BIT_CONV) << 4;
+        motor.rtP.id_fieldWeakMax     = (1 * AMPERE2BIT_CONV) << 4;
         motor.rtP.a_phaAdvMax         = 40 << 4;
         motor.rtP.b_cruiseCtrlEna     = false;
         motor.rtP.n_cruiseMotTgt      = 0;
