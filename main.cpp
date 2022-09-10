@@ -1421,7 +1421,7 @@ void doMotorTest()
 
     left.enable = true;
     left.rtU.r_inpTgt            = pwm;
-    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::Sinusoidal);
+    left.rtP.z_ctrlTypSel        = uint8_t(ControlType::FieldOrientedControl);
     left.rtU.z_ctrlModReq        = uint8_t(ControlMode::Voltage);
     left.rtP.i_max               = (2 * AMPERE2BIT_CONV) << 4;
     left.iDcMax                  = 8;
