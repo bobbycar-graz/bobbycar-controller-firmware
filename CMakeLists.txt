@@ -304,6 +304,106 @@ add_custom_target(pcbv2_test ALL SOURCES pcbv2_test.hex pcbv2_test.bin)
 add_custom_target(flash-pcbv2_test COMMAND st-flash --reset write pcbv2_test.bin 0x8000000 SOURCES pcbv2_test.bin DEPENDS pcbv2_test.bin)
 
 
+#
+# commander v2 front
+#
+add_executable(commander_v2_front.elf config.h defines.h main.cpp)
+target_link_libraries(commander_v2_front.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(commander_v2_front.elf PRIVATE
+        #-DMOTOR_TEST
+        -DFEATURE_IGNORE_OTHER_MOTOR
+        #    -DHALL_BCA
+        #    -DPWM_FREQ_12KHZ
+        #    -DFEATURE_BUTTON
+        -DPETERS_PLATINE
+        #    -DHUART2
+        #    -DHUART3
+        #    -DFEATURE_SERIAL_CONTROL
+        #    -DFEATURE_SERIAL_FEEDBACK
+        #    -DLOG_TO_SERIAL
+        -DFEATURE_CAN
+        #    -DCAN_LOG_UNKNOWN_ADDR
+        #    -DIS_BACK
+        -DAMPERE2BIT_CONV=28
+        -DLEFT_HALL_ABC
+        #-DLEFT_HALL_ACB
+        #-DLEFT_HALL_BAC
+        #-DLEFT_HALL_BCA
+        #-DLEFT_HALL_CAB
+        #-DLEFT_HALL_CBA
+
+        -DRIGHT_HALL_ABC
+        #-DRIGHT_HALL_ACB
+        #-DRIGHT_HALL_BAC
+        #-DRIGHT_HALL_BCA
+        #-DRIGHT_HALL_CAB
+        #-DRIGHT_HALL_CBA
+
+        #-DFEATURE_BETTER_FOC_CONFIG
+        #-DLEFT_PHASE_MEAS_AB
+        #-DLEFT_PHASE_MEAS_AC
+        #-DLEFT_PHASE_MEAS_BC
+
+        #-DRIGHT_PHASE_MEAS_AB
+        #-DRIGHT_PHASE_MEAS_AC
+        #-DRIGHT_PHASE_MEAS_BC
+)
+add_custom_command(OUTPUT commander_v2_front.hex COMMAND arm-none-eabi-objcopy -O ihex commander_v2_front.elf commander_v2_front.hex DEPENDS commander_v2_front.elf)
+add_custom_command(OUTPUT commander_v2_front.bin COMMAND arm-none-eabi-objcopy -O binary -S commander_v2_front.elf commander_v2_front.bin DEPENDS commander_v2_front.elf)
+add_custom_target(commander_v2_front ALL SOURCES commander_v2_front.hex commander_v2_front.bin)
+add_custom_target(flash-commander_v2_front COMMAND st-flash --reset write commander_v2_front.bin 0x8000000 SOURCES commander_v2_front.bin DEPENDS commander_v2_front.bin)
+
+
+#
+# commander v2 back
+#
+add_executable(commander_v2_back.elf config.h defines.h main.cpp)
+target_link_libraries(commander_v2_back.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(commander_v2_back.elf PRIVATE
+        #-DMOTOR_TEST
+        -DFEATURE_IGNORE_OTHER_MOTOR
+        #    -DHALL_BCA
+        #    -DPWM_FREQ_12KHZ
+        #    -DFEATURE_BUTTON
+        -DPETERS_PLATINE
+        #    -DHUART2
+        #    -DHUART3
+        #    -DFEATURE_SERIAL_CONTROL
+        #    -DFEATURE_SERIAL_FEEDBACK
+        #    -DLOG_TO_SERIAL
+        -DFEATURE_CAN
+        #    -DCAN_LOG_UNKNOWN_ADDR
+        -DIS_BACK
+        -DAMPERE2BIT_CONV=28
+        -DLEFT_HALL_ABC
+        #-DLEFT_HALL_ACB
+        #-DLEFT_HALL_BAC
+        #-DLEFT_HALL_BCA
+        #-DLEFT_HALL_CAB
+        #-DLEFT_HALL_CBA
+
+        -DRIGHT_HALL_ABC
+        #-DRIGHT_HALL_ACB
+        #-DRIGHT_HALL_BAC
+        #-DRIGHT_HALL_BCA
+        #-DRIGHT_HALL_CAB
+        #-DRIGHT_HALL_CBA
+
+        #-DFEATURE_BETTER_FOC_CONFIG
+        #-DLEFT_PHASE_MEAS_AB
+        #-DLEFT_PHASE_MEAS_AC
+        #-DLEFT_PHASE_MEAS_BC
+
+        #-DRIGHT_PHASE_MEAS_AB
+        #-DRIGHT_PHASE_MEAS_AC
+        #-DRIGHT_PHASE_MEAS_BC
+)
+add_custom_command(OUTPUT commander_v2_back.hex COMMAND arm-none-eabi-objcopy -O ihex commander_v2_back.elf commander_v2_back.hex DEPENDS commander_v2_back.elf)
+add_custom_command(OUTPUT commander_v2_back.bin COMMAND arm-none-eabi-objcopy -O binary -S commander_v2_back.elf commander_v2_back.bin DEPENDS commander_v2_back.elf)
+add_custom_target(commander_v2_back ALL SOURCES commander_v2_back.hex commander_v2_back.bin)
+add_custom_target(flash-commander_v2_back COMMAND st-flash --reset write commander_v2_back.bin 0x8000000 SOURCES commander_v2_back.bin DEPENDS commander_v2_back.bin)
+
+
 # util targets
 add_custom_target(debug
                   COMMAND openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg)
