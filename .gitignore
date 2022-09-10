@@ -18,5 +18,5 @@ cmake-build-*/
 hover.map
 libemanuel_foc_model.a
 libstm32_hal.a
-pcbv2_test.bin
-pcbv2_test.elf
+/*.bin
+/*elf
