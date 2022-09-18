@@ -289,14 +289,14 @@ target_compile_options(pcbv2_test.elf PRIVATE
         #-DRIGHT_HALL_CAB
         #-DRIGHT_HALL_CBA
 
-        -DFEATURE_BETTER_FOC_CONFIG
-        -DLEFT_PHASE_MEAS_AB
+        #-DFEATURE_BETTER_FOC_CONFIG
+        #-DLEFT_PHASE_MEAS_AB
         #-DLEFT_PHASE_MEAS_AC
         #-DLEFT_PHASE_MEAS_BC
 
         #-DRIGHT_PHASE_MEAS_AB
         #-DRIGHT_PHASE_MEAS_AC
-        -DRIGHT_PHASE_MEAS_BC
+        #-DRIGHT_PHASE_MEAS_BC
 )
 add_custom_command(OUTPUT pcbv2_test.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_test.elf pcbv2_test.hex DEPENDS pcbv2_test.elf)
 add_custom_command(OUTPUT pcbv2_test.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_test.elf pcbv2_test.bin DEPENDS pcbv2_test.elf)
@@ -324,7 +324,7 @@ target_compile_options(commander_v2_front.elf PRIVATE
         -DFEATURE_CAN
         #    -DCAN_LOG_UNKNOWN_ADDR
         #    -DIS_BACK
-        -DAMPERE2BIT_CONV=28
+        #-DAMPERE2BIT_CONV=28
         -DLEFT_HALL_ABC
         #-DLEFT_HALL_ACB
         #-DLEFT_HALL_BAC
@@ -374,7 +374,7 @@ target_compile_options(commander_v2_back.elf PRIVATE
         -DFEATURE_CAN
         #    -DCAN_LOG_UNKNOWN_ADDR
         -DIS_BACK
-        -DAMPERE2BIT_CONV=28
+        #-DAMPERE2BIT_CONV=28
         -DLEFT_HALL_ABC
         #-DLEFT_HALL_ACB
         #-DLEFT_HALL_BAC
