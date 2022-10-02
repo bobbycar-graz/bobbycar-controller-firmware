@@ -498,8 +498,8 @@ void updateMotors()
 
 
 #ifdef SHUNT_4_MILLIOHM
-    curL_DC *= 2;
-    curR_DC *= 2;
+    curL_DC *= 2.162;
+    curR_DC *= 2.162;
 #endif
 
     const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * AMPERE2BIT_CONV);
