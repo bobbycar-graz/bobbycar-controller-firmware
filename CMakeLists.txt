@@ -80,6 +80,7 @@ target_compile_options(motortest.elf PRIVATE
 #    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
 #    -DPETERS_PLATINE
+#    -DSHUNT_4_MILLIOHM
 #    -DHUART2
 #    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
@@ -106,6 +107,7 @@ target_compile_options(motortest_peter.elf PRIVATE
     #    -DPWM_FREQ_12KHZ
     #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
+#    -DSHUNT_4_MILLIOHM
     #     -DFEATURE_INVERT_HALL
     #    -DHUART2
     #    -DHUART3
@@ -134,6 +136,7 @@ target_compile_options(feedcode-front.elf PRIVATE
 #    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
+#    -DSHUNT_4_MILLIOHM
 #    -DHUART2
 #    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
@@ -160,6 +163,7 @@ target_compile_options(feedcode-back.elf PRIVATE
 #    -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
+#    -DSHUNT_4_MILLIOHM
 #    -DHUART2
 #    -DHUART3
 #    -DFEATURE_SERIAL_CONTROL
@@ -186,6 +190,7 @@ target_compile_options(greyhash.elf PRIVATE
     -DPWM_FREQ_12KHZ
 #    -DFEATURE_BUTTON
     -DPETERS_PLATINE
+#    -DSHUNT_4_MILLIOHM
 #    -DHUART2
     -DHUART3
     -DFEATURE_SERIAL_CONTROL
@@ -212,6 +217,7 @@ target_compile_options(pcbv2_front.elf PRIVATE
         #    -DPWM_FREQ_12KHZ
         #    -DFEATURE_BUTTON
         -DPETERS_PLATINE
+        #    -DSHUNT_4_MILLIOHM
         #    -DHUART2
         #    -DHUART3
         #    -DFEATURE_SERIAL_CONTROL
@@ -239,6 +245,7 @@ target_compile_options(pcbv2_back.elf PRIVATE
         #    -DPWM_FREQ_12KHZ
         #    -DFEATURE_BUTTON
         -DPETERS_PLATINE
+        #    -DSHUNT_4_MILLIOHM
         #    -DHUART2
         #    -DHUART3
         #    -DFEATURE_SERIAL_CONTROL
@@ -266,6 +273,7 @@ target_compile_options(pcbv2_test.elf PRIVATE
         #    -DPWM_FREQ_12KHZ
         #    -DFEATURE_BUTTON
         -DPETERS_PLATINE
+        #    -DSHUNT_4_MILLIOHM
         #    -DHUART2
         #    -DHUART3
         #    -DFEATURE_SERIAL_CONTROL
@@ -316,6 +324,7 @@ target_compile_options(commander_v2_front.elf PRIVATE
         #    -DPWM_FREQ_12KHZ
         #    -DFEATURE_BUTTON
         -DPETERS_PLATINE
+        -DSHUNT_4_MILLIOHM
         #    -DHUART2
         #    -DHUART3
         #    -DFEATURE_SERIAL_CONTROL
@@ -366,6 +375,7 @@ target_compile_options(commander_v2_back.elf PRIVATE
         #    -DPWM_FREQ_12KHZ
         #    -DFEATURE_BUTTON
         -DPETERS_PLATINE
+        -DSHUNT_4_MILLIOHM
         #    -DHUART2
         #    -DHUART3
         #    -DFEATURE_SERIAL_CONTROL
