@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cstdint>
 #include <cstring>
 
 #include "stm32f1xx_hal.h"
@@ -1650,8 +1651,8 @@ void applyIncomingCanMessage()
     case MotorController<isBackBoard, true> ::Command::NMotMax:       right.rtP.n_max           = *((uint16_t*)buf) << 4; break;
     case MotorController<isBackBoard, false>::Command::FieldWeakMax:  left .rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
     case MotorController<isBackBoard, true> ::Command::FieldWeakMax:  right.rtP.id_fieldWeakMax = (int16_t(*((uint8_t*)buf)) * AMPERE2BIT_CONV) << 4; break;
-    case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left .rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
-    case MotorController<isBackBoard, true> ::Command::PhaseAdvMax:   right.rtP.a_phaAdvMax     = *((uint16_t*)buf) << 4; break;
+    case MotorController<isBackBoard, false>::Command::PhaseAdvMax:   left .rtP.a_phaAdvMax     = ((uint16_t)*((uint8_t*)buf)) << 4; break;
+    case MotorController<isBackBoard, true> ::Command::PhaseAdvMax:   right.rtP.a_phaAdvMax     = ((uint16_t)*((uint8_t*)buf)) << 4; break;
     case MotorController<isBackBoard, false>::Command::CruiseCtrlEna: left .rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
     case MotorController<isBackBoard, true> ::Command::CruiseCtrlEna: right.rtP.b_cruiseCtrlEna = *((bool*)buf);          break;
     case MotorController<isBackBoard, false>::Command::CruiseMotTgt:  left .rtP.n_cruiseMotTgt  = *((int16_T*)buf);       break;
