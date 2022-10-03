@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: [motortest, motortest_peter, feedcode-front, feedcode-back, greyhash]
+        config: [motortest, motortest_peter, feedcode-front, feedcode-back, greyhash, pcbv2_front, pcbv2_back, pcbv2_test, commander_v2_front, commander_v2_back]
     steps:
       - uses: actions/checkout@v2
         with:
