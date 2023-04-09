@@ -174,6 +174,61 @@ add_custom_command(OUTPUT feedcode-back.bin COMMAND arm-none-eabi-objcopy -O bin
 add_custom_target(feedcode-back ALL SOURCES feedcode-back.hex feedcode-back.bin)
 add_custom_target(flash-feedcode-back COMMAND st-flash --reset write feedcode-back.bin 0x8000000 SOURCES feedcode-back.bin DEPENDS feedcode-back.bin)
 
+
+#
+# feedc0de 2 front
+#
+add_executable(feedcode2-front.elf config.h defines.h main.cpp)
+target_link_libraries(feedcode2-front.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(feedcode2-front.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+    -DLEFT_HALL_ABC
+    -DRIGHT_HALL_ABC
+#    -DPWM_FREQ_12KHZ
+#    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+#    -DHUART2
+#    -DHUART3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+#    -DIS_BACK
+)
+add_custom_command(OUTPUT feedcode2-front.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode2-front.elf feedcode2-front.hex DEPENDS feedcode2-front.elf)
+add_custom_command(OUTPUT feedcode2-front.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode2-front.elf feedcode2-front.bin DEPENDS feedcode2-front.elf)
+add_custom_target(feedcode2-front ALL SOURCES feedcode2-front.hex feedcode2-front.bin)
+add_custom_target(flash-feedcode2-front COMMAND st-flash --reset write feedcode2-front.bin 0x8000000 SOURCES feedcode2-front.bin DEPENDS feedcode2-front.bin)
+
+#
+# feedc0de 2 back
+#
+add_executable(feedcode2-back.elf config.h defines.h main.cpp)
+target_link_libraries(feedcode2-back.elf stm32_hal emanuel_foc_model bobbycar-protocol)
+target_compile_options(feedcode2-back.elf PRIVATE
+#    -DMOTOR_TEST
+    -DFEATURE_IGNORE_OTHER_MOTOR
+    -DLEFT_HALL_ACB
+    -DRIGHT_HALL_ACB
+#    -DPWM_FREQ_12KHZ
+#    -DFEATURE_BUTTON
+    -DPETERS_PLATINE
+#    -DHUART2
+#    -DHUART3
+#    -DFEATURE_SERIAL_CONTROL
+#    -DFEATURE_SERIAL_FEEDBACK
+#    -DLOG_TO_SERIAL
+    -DFEATURE_CAN
+#    -DCAN_LOG_UNKNOWN_ADDR
+    -DIS_BACK
+)
+add_custom_command(OUTPUT feedcode2-back.hex COMMAND arm-none-eabi-objcopy -O ihex feedcode2-back.elf feedcode2-back.hex DEPENDS feedcode2-back.elf)
+add_custom_command(OUTPUT feedcode2-back.bin COMMAND arm-none-eabi-objcopy -O binary -S feedcode2-back.elf feedcode2-back.bin DEPENDS feedcode2-back.elf)
+add_custom_target(feedcode2-back ALL SOURCES feedcode2-back.hex feedcode2-back.bin)
+add_custom_target(flash-feedcode2-back COMMAND st-flash --reset write feedcode2-back.bin 0x8000000 SOURCES feedcode2-back.bin DEPENDS feedcode2-back.bin)
+
 #
 # greyhash
 #
