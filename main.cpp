@@ -40,6 +40,10 @@
 #include "bobbycar-can.h"
 #endif
 
+#ifdef FEATURE_UVLO
+#include "uvlo.h"
+#endif
+
 extern "C" {
 #include "BLDC_controller.h"
 extern const P rtP_Left; // default settings defined in BLDC_controller_data.c
@@ -508,17 +512,25 @@ void updateMotors()
     const bool leftEnable = left.enable.load();
     const bool rightEnable = right.enable.load();
 
+    bool enableAny = timeoutVal <= 500;
+#ifdef FEATURE_UVLO
+    enableAny = enableAny && !UVLO::isLockedOut();
+#endif
+
+    bool enableL = enableAny && leftEnable && !chopL;
+    bool enableR = enableAny && rightEnable && !chopR;
+
     // Disable PWM when current limit is reached (current chopping)
     // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-    if (chopL || timeoutVal > 500 || !leftEnable)
-        LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
-    else
+    if (enableL)
         LEFT_TIM->BDTR |= TIM_BDTR_MOE;
-
-    if (chopR || timeoutVal > 500 || !rightEnable)
-        RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
     else
+        LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
+
+    if (enableR)
         RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
+    else
+        RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
 
     // ############################### MOTOR CONTROL ###############################
 
@@ -1824,6 +1836,10 @@ void updateSensors()
     static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 20;
     filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, batVoltageFixdt);
     batVoltage = (int16_t)(batVoltageFixdt >> 20);  // convert fixed-point to integer
+
+#ifdef FEATURE_UVLO
+    UVLO::update(adc_buffer.batt1);
+#endif
 }
 
 void applyDefaultSettings()
