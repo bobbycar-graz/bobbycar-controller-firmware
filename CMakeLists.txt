@@ -276,6 +276,7 @@ target_compile_options(pcbv2_front.elf PRIVATE
         #    -DCAN_LOG_UNKNOWN_ADDR
         #     -DIS_BACK
         -DAMPERE2BIT_CONV=28
+        -DFEATURE_UVLO
 )
 add_custom_command(OUTPUT pcbv2_front.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_front.elf pcbv2_front.hex DEPENDS pcbv2_front.elf)
 add_custom_command(OUTPUT pcbv2_front.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_front.elf pcbv2_front.bin DEPENDS pcbv2_front.elf)
@@ -303,6 +304,7 @@ target_compile_options(pcbv2_back.elf PRIVATE
         #    -DCAN_LOG_UNKNOWN_ADDR
         -DIS_BACK
         -DAMPERE2BIT_CONV=28
+        -DFEATURE_UVLO
 )
 add_custom_command(OUTPUT pcbv2_back.hex COMMAND arm-none-eabi-objcopy -O ihex pcbv2_back.elf pcbv2_back.hex DEPENDS pcbv2_back.elf)
 add_custom_command(OUTPUT pcbv2_back.bin COMMAND arm-none-eabi-objcopy -O binary -S pcbv2_back.elf pcbv2_back.bin DEPENDS pcbv2_back.elf)
