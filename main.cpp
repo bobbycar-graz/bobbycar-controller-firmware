@@ -530,7 +530,11 @@ void updateMotors()
     OverrunFlag = true;
 
     constexpr int32_t pwm_res  = 64000000 / 2 / PWM_FREQ; // = 2000
-    constexpr int32_t pwm_margin = 100;        /* This margin allows to always have a window in the PWM signal for proper Phase currents measurement */
+    constexpr int32_t foc_pwm_margin = 100;        /* This margin allows to always have a window in the PWM signal for proper Phase currents measurement */
+
+    using bobbycar::protocol::ControlType;
+    const int32_t pwm_margin_l = (left.rtP.z_ctrlTypSel == uint8_t(ControlType::FieldOrientedControl)) ? foc_pwm_margin : 0;
+    const int32_t pwm_margin_r = (right.rtP.z_ctrlTypSel == uint8_t(ControlType::FieldOrientedControl)) ? foc_pwm_margin : 0;
 
     /* Make sure to stop BOTH motors in case of an error */
 
@@ -575,9 +579,9 @@ void updateMotors()
     int wl            = left.rtY.DC_phaC;
 
     /* Apply commands */
-    LEFT_TIM->LEFT_TIM_U    = (uint16_t)std::clamp(ul + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    LEFT_TIM->LEFT_TIM_V    = (uint16_t)std::clamp(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    LEFT_TIM->LEFT_TIM_W    = (uint16_t)std::clamp(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    LEFT_TIM->LEFT_TIM_U    = (uint16_t)std::clamp(ul + pwm_res / 2, pwm_margin_l, pwm_res-pwm_margin_l);
+    LEFT_TIM->LEFT_TIM_V    = (uint16_t)std::clamp(vl + pwm_res / 2, pwm_margin_l, pwm_res-pwm_margin_l);
+    LEFT_TIM->LEFT_TIM_W    = (uint16_t)std::clamp(wl + pwm_res / 2, pwm_margin_l, pwm_res-pwm_margin_l);
     // =================================================================
 
 
@@ -612,9 +616,9 @@ void updateMotors()
     int wr            = right.rtY.DC_phaC;
 
     /* Apply commands */
-    RIGHT_TIM->RIGHT_TIM_U  = (uint16_t)std::clamp(ur + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)std::clamp(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)std::clamp(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    RIGHT_TIM->RIGHT_TIM_U  = (uint16_t)std::clamp(ur + pwm_res / 2, pwm_margin_r, pwm_res-pwm_margin_r);
+    RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)std::clamp(vr + pwm_res / 2, pwm_margin_r, pwm_res-pwm_margin_r);
+    RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)std::clamp(wr + pwm_res / 2, pwm_margin_r, pwm_res-pwm_margin_r);
     // =================================================================
 
     /* Indicate task complete */
