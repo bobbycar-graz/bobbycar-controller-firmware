@@ -464,15 +464,15 @@ void updateMotors()
     static int16_t offsetdcl{2000};
     static int16_t offsetdcr{2000};
 
-    if (offsetcount < 2000) // calibrate ADC offsets
+    if (offsetcount < 20000) // calibrate ADC offsets
     {
         offsetcount++;
-        offsetrl1 = (adc_buffer.rl1 + offsetrl1) / 2;
-        offsetrl2 = (adc_buffer.rl2 + offsetrl2) / 2;
-        offsetrr1 = (adc_buffer.rr1 + offsetrr1) / 2;
-        offsetrr2 = (adc_buffer.rr2 + offsetrr2) / 2;
-        offsetdcl = (adc_buffer.dcl + offsetdcl) / 2;
-        offsetdcr = (adc_buffer.dcr + offsetdcr) / 2;
+        offsetrl1 = (adc_buffer.rl1 + offsetrl1 * 9) / 10;
+        offsetrl2 = (adc_buffer.rl2 + offsetrl2 * 9) / 10;
+        offsetrr1 = (adc_buffer.rr1 + offsetrr1 * 9) / 10;
+        offsetrr2 = (adc_buffer.rr2 + offsetrr2 * 9) / 10;
+        offsetdcl = (adc_buffer.dcl + offsetdcl * 9) / 10;
+        offsetdcr = (adc_buffer.dcr + offsetdcr * 9) / 10;
         return;
     }
 
@@ -495,6 +495,12 @@ void updateMotors()
     int16_t curR_phaC = (int16_t)(offsetrr2 - adc_buffer.rr2);
 #endif
     int16_t curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
+
+
+#ifdef SHUNT_4_MILLIOHM
+    curL_DC *= 2.276;
+    curR_DC *= 2.276;
+#endif
 
     const bool chopL = std::abs(curL_DC) > (left.iDcMax.load() * AMPERE2BIT_CONV);
     if (chopL)
